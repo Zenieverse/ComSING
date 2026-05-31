@@ -1165,9 +1165,9 @@ export default function App() {
                         const activeDuetPart = selectedSong?.duetParts?.[currentLyricIndex];
                         const isIdolActive = recordingState === "recording" && activeDuetPart && (activeDuetPart.sender === "idol" || activeDuetPart.sender === "both");
                         return (
-                          <div className="flex items-center gap-4 bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 text-left">
+                          <div className="relative group/idol flex items-center gap-4 bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 text-left cursor-pointer transition-transform duration-300">
                             <div className={`w-10 h-10 rounded-xl bg-gradient-to-tr from-pink-500 via-fuchsia-600 to-indigo-500 flex items-center justify-center font-bold text-sm text-white shrink-0 transition-all duration-300 ${
-                              isIdolActive ? "animate-idol-pulse scale-105 ring-2 ring-pink-500/50" : ""
+                              isIdolActive ? "animate-idol-pulse scale-105 ring-2 ring-pink-500/50" : "hover:scale-105"
                             }`}>
                               {selectedSong.artist[0]}
                             </div>
@@ -1176,6 +1176,50 @@ export default function App() {
                                 {isIdolActive ? "⚡ SINGING NOW" : "Harmonizer partner"}
                               </p>
                               <p className="text-xs font-bold">{selectedSong.artist} (Virtual Idol)</p>
+                            </div>
+
+                            {/* Floating details tooltip on hover of the avatar / virtual partner tag container */}
+                            <div className="absolute bottom-full left-0 mb-3 w-64 bg-slate-950/95 border border-pink-500/40 rounded-2xl p-4 shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/idol:opacity-100 group-hover/idol:translate-y-0 group-hover/idol:pointer-events-auto transition-all duration-300 z-50 backdrop-blur-lg">
+                              <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/5">
+                                <div className="w-6 h-6 rounded-lg bg-pink-500/20 flex items-center justify-center text-[10px] font-bold text-pink-400">
+                                  {selectedSong.artist[0]}
+                                </div>
+                                <div>
+                                  <h5 className="text-xs font-bold text-white leading-none">{selectedSong.artist}</h5>
+                                  <span className="text-[8px] font-mono font-bold text-pink-400 uppercase tracking-widest">Idol Spec Sheet</span>
+                                </div>
+                              </div>
+                              <div className="space-y-2 text-[10px] font-mono">
+                                <div>
+                                  <span className="text-slate-400 block uppercase text-[8px] tracking-wider">Vocal Range</span>
+                                  <span className="text-cyan-400 font-bold block">
+                                    {selectedSong.artist.toLowerCase().includes("luna") ? "Soprano (G3 - C6)" : selectedSong.artist.toLowerCase().includes("aria") ? "Mezzo-Soprano (A3 - F5)" : "Alto/Tenor (C3 - G5)"}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block uppercase text-[8px] tracking-wider">Primary Genre Beats</span>
+                                  <span className="text-purple-400 font-bold block">
+                                    {selectedSong.artist.toLowerCase().includes("luna") ? "Synthpop, Electro-Rock & Cyber-Dance" : selectedSong.artist.toLowerCase().includes("aria") ? "J-Pop, Future Bass & Symphonix" : "Acoustic Pop & R&B Melodics"}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center bg-white/5 p-1.5 rounded-lg border border-white/5">
+                                  <div>
+                                    <span className="text-slate-400 block uppercase text-[7px] tracking-wider">Timbre Stability</span>
+                                    <span className="text-emerald-400 font-bold block text-[9px]">
+                                      {selectedSong.artist.toLowerCase().includes("luna") ? "94.5% (Platinum)" : selectedSong.artist.toLowerCase().includes("aria") ? "92.8% (Gold)" : "91.2% (Silver)"}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block uppercase text-[7px] tracking-wider">Response Style</span>
+                                    <span className="text-amber-400 font-bold block text-[9px] uppercase">
+                                      Dynamic Duet
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              {/* Arrow pointing down */}
+                              <div className="absolute top-full left-6 -mt-[1px] w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-pink-500/40" />
+                              <div className="absolute top-full left-6 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-950" />
                             </div>
                           </div>
                         );
