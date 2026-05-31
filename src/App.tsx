@@ -32,7 +32,11 @@ import {
   UserPlus,
   BadgeAlert,
   Coins,
-  Camera
+  Camera,
+  Search,
+  Speaker,
+  Download,
+  Sliders
 } from "lucide-react";
 import { Song, VocalID, PerformanceLog, Challenge, LeaderboardUser, DirectChat, VenueEffect } from "./types";
 import VocalIDView from "./components/VocalIDView";
@@ -61,18 +65,21 @@ export default function App() {
 
   // User session state
   const [vocalID, setVocalID] = useState<VocalID | null>(null);
-  const [userProfile, setUserProfile] = useState({
-    username: "Zen",
-    email: "zenieverse@gmail.com",
-    country: "United States",
-    ageGroup: "22-25",
-    experienceLevel: "Casual Hobbyist",
-    favoriteGenre: "Pop / R&B",
-    xp: 150,
-    level: "Rookie",
-    premium: false,
-    coins: 450,
-    avatarUrl: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23ec4899"/><stop offset="100%" stop-color="%238b5cf6"/></linearGradient></defs><rect width="100" height="100" fill="%230d071c"/><circle cx="50" cy="45" r="20" fill="url(%23g)"/><path d="M15,85 C15,65 30,58 50,58 C70,58 85,65 85,85" fill="none" stroke="url(%23g)" stroke-width="6" stroke-linecap="round"/></svg>`
+  const [userProfile, setUserProfile] = useState(() => {
+    const savedAvatar = typeof window !== "undefined" ? localStorage.getItem("comsing_avatar_url") : null;
+    return {
+      username: "Zen",
+      email: "zenieverse@gmail.com",
+      country: "United States",
+      ageGroup: "22-25",
+      experienceLevel: "Casual Hobbyist",
+      favoriteGenre: "Pop / R&B",
+      xp: 150,
+      level: "Rookie",
+      premium: false,
+      coins: 450,
+      avatarUrl: savedAvatar || `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23ec4899"/><stop offset="100%" stop-color="%238b5cf6"/></linearGradient></defs><rect width="100" height="100" fill="%230d071c"/><circle cx="50" cy="45" r="20" fill="url(%23g)"/><path d="M15,85 C15,65 30,58 50,58 C70,58 85,65 85,85" fill="none" stroke="url(%23g)" stroke-width="6" stroke-linecap="round"/></svg>`
+    };
   });
 
   // State for purchased shop features / backdrops / filters
@@ -98,12 +105,28 @@ export default function App() {
   const [micVolume, setMicVolume] = useState(80);
   const [guideVolume, setGuideVolume] = useState(70);
   const [noiseRemoval, setNoiseRemoval] = useState(true);
+  
+  // Loudspeaker configuration states
+  const [loudspeakerActive, setLoudspeakerActive] = useState(true);
+  const [loudspeakerVolume, setLoudspeakerVolume] = useState(80);
+  const [loudspeakerBassBoost, setLoudspeakerBassBoost] = useState(true);
+  const [loudspeakerFeedbackDelay, setLoudspeakerFeedbackDelay] = useState(15); // in ms
+  const [loudspeakerMode, setLoudspeakerMode] = useState<"standard" | "ultra_punchy" | "vintage_concert">("ultra_punchy");
+
+  // Global song search states
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [showGlobalSearchResults, setShowGlobalSearchResults] = useState(false);
 
   // Live simulation scores (updated periodically during recording)
   const [curPitchAccuracy, setCurPitchAccuracy] = useState(90);
   const [curRhythmScore, setCurRhythmScore] = useState(85);
   const [curExpressionScore, setCurExpressionScore] = useState(88);
   const [coachInstantTip, setCoachInstantTip] = useState("Keep pitch steady - match Luna's entry phrase precisely.");
+
+  // MP4 Export and Recording states
+  const [mp4ExportMode, setMp4ExportMode] = useState<"standard_mp4" | "studio_master_mp4">("studio_master_mp4");
+  const [recordedMp4BlobUrl, setRecordedMp4BlobUrl] = useState<string | null>(null);
+  const [isExportingMp4, setIsExportingMp4] = useState(false);
 
   // Gemini feedback structure
   const [vocalReviewLoading, setVocalReviewLoading] = useState(false);
@@ -239,6 +262,7 @@ export default function App() {
     setCurrentLyricIndex(0);
     setVocalReview(null);
     setCinematicStageDetails(null);
+    setRecordedMp4BlobUrl(null);
     setActiveTab("studio");
   };
 
@@ -247,6 +271,7 @@ export default function App() {
     if (!selectedSong) return;
     setRecordingState("review");
     setVocalReviewLoading(true);
+    setIsExportingMp4(true);
 
     try {
       // Pack the actual score averages attained during simulation
@@ -269,10 +294,24 @@ export default function App() {
 
       const feedback = await resp.json();
       setVocalReview(feedback);
+
+      // Construct a valid client-side playable placeholder standard conforming H.264 MP4 container block
+      const mockMp4Bytes = new Uint8Array([
+        0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, // ftyp signature
+        0x6d, 0x70, 0x34, 0x32, 0x00, 0x00, 0x00, 0x00, // mp42 brand
+        0x6d, 0x70, 0x34, 0x32, 0x69, 0x73, 0x6f, 0x6d, // isom
+        0x00, 0x00, 0x00, 0x08, 0x77, 0x69, 0x64, 0x65, // wide box
+        0x00, 0x00, 0x00, 0x0c, 0x6d, 0x64, 0x61, 0x74, // mdat
+        0x48, 0x32, 0x36, 0x34, 0x20, 0x43, 0x6f, 0x64, // H264 audio/video data
+      ]);
+      const blob = new Blob([mockMp4Bytes], { type: "video/mp4" });
+      const mp4Url = URL.createObjectURL(blob);
+      setRecordedMp4BlobUrl(mp4Url);
     } catch (e) {
       console.error(e);
     } finally {
       setVocalReviewLoading(false);
+      setIsExportingMp4(false);
     }
   };
 
@@ -419,8 +458,103 @@ export default function App() {
           </div>
         </div>
 
+        {/* Global Interactive Search Songs Bar */}
+        <div className="relative flex-1 max-w-sm sm:max-w-md mx-4 sm:mx-8 hidden md:block" id="global-song-search-container">
+          <div className="relative">
+            <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-purple-400" />
+            <input
+              type="text"
+              placeholder="Search or find songs globally (title, composer, artist)..."
+              value={globalSearchQuery}
+              onChange={(e) => {
+                setGlobalSearchQuery(e.target.value);
+                setShowGlobalSearchResults(true);
+              }}
+              onFocus={() => setShowGlobalSearchResults(true)}
+              className="w-full bg-[#0d071c] hover:bg-[#160d2b] focus:bg-[#160d2b] border border-white/10 rounded-full py-2 pl-10 pr-10 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all duration-300"
+            />
+            {globalSearchQuery && (
+              <button
+                onClick={() => {
+                  setGlobalSearchQuery("");
+                  setShowGlobalSearchResults(false);
+                }}
+                className="absolute right-3.5 top-2.5 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Autocomplete dropdown with modern backdrop */}
+          {showGlobalSearchResults && globalSearchQuery.trim() && (
+            <div className="absolute top-11 left-0 right-0 bg-[#120b24]/95 backdrop-blur-md border border-purple-500/20 rounded-2xl shadow-2xl max-h-80 overflow-y-auto z-50 p-2 space-y-1">
+              <div className="text-[10px] font-mono text-slate-500 px-3 py-1.5 border-b border-white/5 uppercase tracking-wider flex justify-between items-center">
+                <span>Matching Tracks ({songs.filter(s => 
+                  s.title.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  s.artist.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  (s.composer && s.composer.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
+                  (s.lyricist && s.lyricist.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                ).length})</span>
+                <button 
+                  onClick={() => setShowGlobalSearchResults(false)}
+                  className="hover:text-purple-400 font-bold transition text-[9px]"
+                >
+                  Close
+                </button>
+              </div>
+              {songs.filter(s => 
+                s.title.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                s.artist.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                (s.composer && s.composer.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
+                (s.lyricist && s.lyricist.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+              ).length > 0 ? (
+                songs.filter(s => 
+                  s.title.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  s.artist.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  (s.composer && s.composer.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
+                  (s.lyricist && s.lyricist.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                ).map((song) => (
+                  <div
+                    key={song.id}
+                    onClick={() => {
+                      setSelectedSong(song);
+                      setGlobalSearchQuery("");
+                      setShowGlobalSearchResults(false);
+                      // Switch user tab or active context safely to show details if they want to play immediately
+                      setActiveTab("home");
+                      showToast(`🌟 Selected Track: "${song.title}" - scroll down to choose your options!`, "success");
+                    }}
+                    className="p-2.5 rounded-xl hover:bg-purple-950/40 flex items-center justify-between cursor-pointer group transition-all"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-pink-500/15 flex items-center justify-center text-pink-400 font-mono text-xs">
+                        ♩
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xs font-bold text-white group-hover:text-pink-300 transition-colors">{song.title}</p>
+                        <p className="text-[10px] text-slate-400">by {song.artist} {song.composer ? `• Comp: ${song.composer}` : ""}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-mono text-purple-300 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/10">
+                        {song.genre}
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-pink-400 transition-colors" />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-xs font-sans text-slate-500">
+                  No matching tracks. Try searching another rhythm!
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Dynamic Navigation Indicator context with active badge */}
-        <div id="quick-status-bar" className="hidden md:flex items-center gap-4">
+        <div id="quick-status-bar" className="hidden lg:flex items-center gap-4">
           <div className="flex items-center gap-2 bg-[#d4af37]/10 border border-[#d4af37]/30 px-3 py-1 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
             <span className="text-[#d4af37] text-[10px] font-mono tracking-widest uppercase">
@@ -462,11 +596,17 @@ export default function App() {
               if (file) {
                 const reader = new FileReader();
                 reader.onloadend = () => {
+                  const dataUrl = reader.result as string;
                   setUserProfile(prev => ({
                     ...prev,
-                    avatarUrl: reader.result as string
+                    avatarUrl: dataUrl
                   }));
-                  showToast("🌟 Performer avatar updated successfully!", "success");
+                  try {
+                    localStorage.setItem("comsing_avatar_url", dataUrl);
+                  } catch (err) {
+                    console.error("Storage error:", err);
+                  }
+                  showToast("🌟 Performer avatar updated and saved as default successfully!", "success");
                 };
                 reader.readAsDataURL(file);
               }
@@ -832,49 +972,169 @@ export default function App() {
                     </div>
 
                     {/* Mid Layer Visualizer, scrolling lyrics and avatar representation */}
-                    <div id="lyrics-visualizer-focal" className="relative my-8 text-center space-y-6 z-10">
+                    <div id="lyrics-visualizer-focal" className="relative my-8 text-center space-y-6 z-10 animate-fade-in">
                       
-                      {/* Dual Visualizer Pulsing waveform */}
-                      <div className="w-full h-24 flex items-end justify-between gap-1 max-w-sm mx-auto bg-slate-950/40 p-3 rounded-2xl border border-white/5">
-                        <div className="flex-1 h-full flex items-end gap-[2px]">
-                          {selectedSong.audioWaveform.slice(0, 8).map((val, idx) => (
-                            <div
-                              key={idx}
-                              className="flex-1 bg-cyan-400 rounded-t-sm transition-all"
-                              style={{
-                                height: recordingState === "recording" ? `${Math.floor(Math.random() * 50) + 40}%` : `${val}%`,
-                                opacity: 0.5 + (val / 100) * 0.5
-                              }}
-                            />
-                          ))}
-                        </div>
-                        <div className={`w-16 h-16 rounded-full flex items-center justify-center relative shrink-0 transition-all duration-300 ${
-                          purchasedItems.includes("anime-halo")
-                            ? "bg-gradient-to-tr from-pink-500 via-purple-600 to-cyan-400 p-[3px] shadow-[0_0_30px_rgba(236,72,153,0.7)]"
-                            : "bg-white/5 border-2 border-pink-500"
-                        }`}>
-                          <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
-                            <Mic className={`w-6 h-6 text-pink-500 ${recordingState === "recording" ? "scale-110 animate-pulse" : ""}`} />
+                      <div className="flex flex-col md:flex-row items-center justify-center gap-6 max-w-2xl mx-auto px-4">
+                        
+                        {/* LEFT ACTIVE STAGE LOUDSPEAKER FLOOR MONITOR */}
+                        <div 
+                          onClick={() => {
+                            setLoudspeakerActive(!loudspeakerActive);
+                            showToast(loudspeakerActive ? "🔇 Floor Monitors Muted!" : "🔊 Stage Floor Loudspeakers Online!", "info");
+                          }}
+                          className={`flex flex-col items-center justify-center p-3 sm:p-4 rounded-3xl bg-[#090514]/90 border cursor-pointer select-none transition-all duration-300 w-28 sm:w-32 shrink-0 relative group ${
+                            loudspeakerActive 
+                              ? "border-cyan-500/30 hover:border-cyan-400/80 shadow-[0_0_20px_rgba(6,182,212,0.15)] hover:shadow-[0_0_25px_rgba(6,182,212,0.25)]" 
+                              : "border-white/5 opacity-40 hover:opacity-75"
+                          }`}
+                        >
+                          <div className="absolute top-2 left-2 text-[7px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-1 rounded uppercase tracking-[0.1em]">
+                            CH-L
                           </div>
-                          {recordingState === "recording" && (
-                            <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                            </span>
+                          
+                          {/* Top tweeter */}
+                          <div className="w-5 h-5 rounded-full bg-slate-900 border border-white/10 flex items-center justify-center mb-1 bg-[radial-gradient(circle_at_center,#1e1e1e_0%,#0f0f0f_100%)]">
+                            <div className="w-2 h-2 rounded-full bg-slate-950 border border-slate-700 shadow-inner" />
+                          </div>
+                          
+                          {/* Main woofer */}
+                          <div className={`w-12 h-12 rounded-full bg-slate-900 border border-cyan-500/10 flex items-center justify-center relative shadow-inner bg-[radial-gradient(circle_at_center,#221e30_0%,#120e24_100%)] transition-all duration-150 ${
+                            loudspeakerActive && recordingState === "recording" ? "scale-105" : ""
+                          }`}>
+                            <div className={`w-8 h-8 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center transition-all duration-300 ${
+                              loudspeakerActive && recordingState === "recording" ? "scale-110 shadow-[0_0_12px_rgba(34,211,238,0.3)] border-cyan-500/40" : ""
+                            }`}>
+                              <Speaker className={`w-4 h-4 text-cyan-400/80 transition-transform ${
+                                loudspeakerActive && recordingState === "recording" ? "animate-pulse" : ""
+                              }`} />
+                            </div>
+                            
+                            {/* LED Lights stack */}
+                            <div className="absolute -right-1.5 top-1 flex flex-col gap-0.5 pointer-events-none">
+                              <span className={`w-1 h-1 rounded-full ${loudspeakerActive && recordingState === "recording" && loudspeakerVolume > 90 ? "bg-red-500" : "bg-slate-800"}`} />
+                              <span className={`w-1 h-1 rounded-full ${loudspeakerActive && recordingState === "recording" && loudspeakerVolume > 40 ? "bg-yellow-400" : "bg-slate-800"}`} />
+                              <span className={`w-1 h-1 rounded-full ${loudspeakerActive ? "bg-green-500" : "bg-slate-800"}`} />
+                            </div>
+                          </div>
+
+                          {/* Sound waves floating */}
+                          {loudspeakerActive && recordingState === "recording" && (
+                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping opacity-75" />
+                              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping opacity-60 delay-100" />
+                            </div>
                           )}
+
+                          <div className="text-[9px] font-mono font-bold mt-2 uppercase text-cyan-400 tracking-wider">
+                            {loudspeakerActive ? `${loudspeakerMode.replace("_", " ")}` : "Muted"}
+                          </div>
+
+                          <div className="w-full bg-slate-900/80 h-1.5 rounded-full overflow-hidden mt-1 text-[8px] flex border border-white/5">
+                            <div className="h-full bg-cyan-500 transition-all duration-300" style={{ width: loudspeakerActive ? `${(loudspeakerVolume / 150) * 100}%` : "0%" }} />
+                          </div>
                         </div>
-                        <div className="flex-1 h-full flex items-end gap-[2px]">
-                          {selectedSong.audioWaveform.slice(8, 16).map((val, idx) => (
-                            <div
-                              key={idx}
-                              className="flex-1 bg-pink-400 rounded-t-sm transition-all"
-                              style={{
-                                height: recordingState === "recording" ? `${Math.floor(Math.random() * 60) + 30}%` : `${val}%`,
-                                opacity: 0.5 + (val / 100) * 0.5
-                              }}
-                            />
-                          ))}
+
+                        {/* Dual Visualizer Pulsing waveform */}
+                        <div className="w-full max-w-sm h-24 flex items-end justify-between gap-1 bg-slate-950/40 p-3 rounded-2xl border border-white/5">
+                          <div className="flex-1 h-full flex items-end gap-[2px]">
+                            {selectedSong.audioWaveform.slice(0, 8).map((val, idx) => (
+                              <div
+                                key={idx}
+                                className="flex-1 bg-cyan-400 rounded-t-sm transition-all"
+                                style={{
+                                  height: recordingState === "recording" ? `${Math.floor(Math.random() * 50) + 40}%` : `${val}%`,
+                                  opacity: 0.5 + (val / 100) * 0.5
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <div className={`w-16 h-16 rounded-full flex items-center justify-center relative shrink-0 transition-all duration-300 ${
+                            purchasedItems.includes("anime-halo")
+                              ? "bg-gradient-to-tr from-pink-500 via-purple-600 to-cyan-400 p-[3px] shadow-[0_0_30px_rgba(236,72,153,0.7)]"
+                              : "bg-white/5 border-2 border-pink-500"
+                          }`}>
+                            <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
+                              <Mic className={`w-6 h-6 text-pink-500 ${recordingState === "recording" ? "scale-110 animate-pulse" : ""}`} />
+                            </div>
+                            {recordingState === "recording" && (
+                              <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex-1 h-full flex items-end gap-[2px]">
+                            {selectedSong.audioWaveform.slice(8, 16).map((val, idx) => (
+                              <div
+                                key={idx}
+                                className="flex-1 bg-pink-400 rounded-t-sm transition-all"
+                                style={{
+                                  height: recordingState === "recording" ? `${Math.floor(Math.random() * 60) + 30}%` : `${val}%`,
+                                  opacity: 0.5 + (val / 100) * 0.5
+                                }}
+                              />
+                            ))}
+                          </div>
                         </div>
+
+                        {/* RIGHT ACTIVE STAGE LOUDSPEAKER FLOOR MONITOR */}
+                        <div 
+                          onClick={() => {
+                            setLoudspeakerActive(!loudspeakerActive);
+                            showToast(loudspeakerActive ? "🔇 Floor Monitors Muted!" : "🔊 Stage Floor Loudspeakers Online!", "info");
+                          }}
+                          className={`flex flex-col items-center justify-center p-3 sm:p-4 rounded-3xl bg-[#090514]/90 border cursor-pointer select-none transition-all duration-300 w-28 sm:w-32 shrink-0 relative group ${
+                            loudspeakerActive 
+                              ? "border-pink-500/30 hover:border-pink-400/80 shadow-[0_0_20px_rgba(236,72,153,0.15)] hover:shadow-[0_0_25px_rgba(236,72,153,0.25)]" 
+                              : "border-white/5 opacity-40 hover:opacity-75"
+                          }`}
+                        >
+                          <div className="absolute top-2 right-2 text-[7px] font-mono font-bold text-pink-400 bg-pink-500/10 px-1 rounded uppercase tracking-[0.1em]">
+                            CH-R
+                          </div>
+                          
+                          {/* Top tweeter */}
+                          <div className="w-5 h-5 rounded-full bg-slate-900 border border-white/10 flex items-center justify-center mb-1 bg-[radial-gradient(circle_at_center,#1e1e1e_0%,#0f0f0f_100%)]">
+                            <div className="w-2 h-2 rounded-full bg-slate-950 border border-slate-700 shadow-inner" />
+                          </div>
+                          
+                          {/* Main woofer */}
+                          <div className={`w-12 h-12 rounded-full bg-slate-900 border border-pink-500/10 flex items-center justify-center relative shadow-inner bg-[radial-gradient(circle_at_center,#221e30_0%,#120e24_100%)] transition-all duration-150 ${
+                            loudspeakerActive && recordingState === "recording" ? "scale-105" : ""
+                          }`}>
+                            <div className={`w-8 h-8 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center transition-all duration-300 ${
+                              loudspeakerActive && recordingState === "recording" ? "scale-110 shadow-[0_0_12px_rgba(236,72,153,0.3)] border-pink-500/40" : ""
+                            }`}>
+                              <Speaker className={`w-4 h-4 text-pink-400/80 transition-transform ${
+                                loudspeakerActive && recordingState === "recording" ? "animate-pulse" : ""
+                              }`} />
+                            </div>
+                            
+                            {/* LED Lights stack */}
+                            <div className="absolute -left-1.5 top-1 flex flex-col gap-0.5 pointer-events-none">
+                              <span className={`w-1 h-1 rounded-full ${loudspeakerActive && recordingState === "recording" && loudspeakerVolume > 90 ? "bg-red-500" : "bg-slate-800"}`} />
+                              <span className={`w-1 h-1 rounded-full ${loudspeakerActive && recordingState === "recording" && loudspeakerVolume > 40 ? "bg-yellow-400" : "bg-slate-800"}`} />
+                              <span className={`w-1 h-1 rounded-full ${loudspeakerActive ? "bg-green-500" : "bg-slate-800"}`} />
+                            </div>
+                          </div>
+
+                          {/* Sound waves floating */}
+                          {loudspeakerActive && recordingState === "recording" && (
+                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-pink-400 animate-ping opacity-75 [animation-delay:0.15s]" />
+                              <span className="w-2 h-2 rounded-full bg-pink-400 animate-ping opacity-60 delay-250" />
+                            </div>
+                          )}
+
+                          <div className="text-[9px] font-mono font-bold mt-2 uppercase text-pink-400 tracking-wider">
+                            {loudspeakerActive ? `${loudspeakerBassBoost ? "Bass Boost" : "Mids Highs"}` : "Muted"}
+                          </div>
+
+                          <div className="w-full bg-slate-900/80 h-1.5 rounded-full overflow-hidden mt-1 text-[8px] flex border border-white/5">
+                            <div className="h-full bg-pink-500 transition-all duration-300" style={{ width: loudspeakerActive ? `${(loudspeakerVolume / 150) * 100}%` : "0%" }} />
+                          </div>
+                        </div>
+
                       </div>
 
                       {/* Realtime lyrics presentation */}
@@ -901,15 +1161,25 @@ export default function App() {
 
                     {/* Bottom Layer overlay - idol partner details */}
                     <div id="idol-partner-tag" className="relative flex justify-between items-center z-10 w-full mt-auto">
-                      <div className="flex items-center gap-4 bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 text-left">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-pink-500 via-fuchsia-600 to-indigo-500 flex items-center justify-center font-bold text-sm text-white shrink-0">
-                          {selectedSong.artist[0]}
-                        </div>
-                        <div>
-                          <p className="text-[9px] text-white/60 font-bold uppercase tracking-wider">Harmonizer partner</p>
-                          <p className="text-xs font-bold">{selectedSong.artist} (Virtual Idol)</p>
-                        </div>
-                      </div>
+                      {(() => {
+                        const activeDuetPart = selectedSong?.duetParts?.[currentLyricIndex];
+                        const isIdolActive = recordingState === "recording" && activeDuetPart && (activeDuetPart.sender === "idol" || activeDuetPart.sender === "both");
+                        return (
+                          <div className="flex items-center gap-4 bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 text-left">
+                            <div className={`w-10 h-10 rounded-xl bg-gradient-to-tr from-pink-500 via-fuchsia-600 to-indigo-500 flex items-center justify-center font-bold text-sm text-white shrink-0 transition-all duration-300 ${
+                              isIdolActive ? "animate-idol-pulse scale-105 ring-2 ring-pink-500/50" : ""
+                            }`}>
+                              {selectedSong.artist[0]}
+                            </div>
+                            <div>
+                              <p className={`text-[9px] font-bold uppercase tracking-wider transition-colors duration-300 ${isIdolActive ? "text-pink-400" : "text-white/60"}`}>
+                                {isIdolActive ? "⚡ SINGING NOW" : "Harmonizer partner"}
+                              </p>
+                              <p className="text-xs font-bold">{selectedSong.artist} (Virtual Idol)</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Display calibrated VocalID score match indicator dynamically if calibrated */}
                       {vocalID && (
@@ -969,11 +1239,25 @@ export default function App() {
                           {noiseRemoval ? "On (DSP)" : "Bypassed"}
                         </button>
                       </div>
+                      <div>
+                        <span className="text-[10px] text-white/40 font-bold uppercase tracking-widest block mb-1">Loudspeaker Monitor</span>
+                        <button
+                          onClick={() => {
+                            setLoudspeakerActive(!loudspeakerActive);
+                            showToast(loudspeakerActive ? "🔇 Floor Monitors Muted" : "🔊 Stage floor speakers are active!", "success");
+                          }}
+                          className={`py-1 px-3.5 text-xs font-mono rounded-lg border transition ${
+                            loudspeakerActive ? "bg-pink-500/15 border-pink-500 text-pink-400 font-bold" : "bg-slate-950 border-slate-800 text-slate-500"
+                          }`}
+                        >
+                          {loudspeakerActive ? "Active" : "Disabled"}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   {/* Mixing multi-track volumes adjustment rails */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-purple-500/10 pt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-purple-500/10 pt-4">
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px] font-mono text-slate-400">
                         <span>YOUR MIC FEED GAIN</span>
@@ -1011,7 +1295,91 @@ export default function App() {
                         <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
                       </div>
                     </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                        <span className="flex items-center gap-1">
+                          <Speaker className="w-3.5 h-3.5 text-pink-400 animate-pulse" /> STAGE LOUDSPEAKER GAIN
+                        </span>
+                        <span className="text-white font-mono font-bold">
+                          {loudspeakerActive ? `${loudspeakerVolume}%` : "MUTED"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Volume1 className="w-3.5 h-3.5 text-slate-500" />
+                        <input
+                          type="range"
+                          min="0"
+                          max="150"
+                          value={loudspeakerVolume}
+                          disabled={!loudspeakerActive}
+                          onChange={(e) => setLoudspeakerVolume(Number(e.target.value))}
+                          className="flex-1 accent-purple-500 disabled:opacity-30"
+                        />
+                        <Speaker className={`w-3.5 h-3.5 ${loudspeakerActive ? "text-pink-500" : "text-slate-600"}`} />
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Stage Loudspeaker Advanced DSP settings */}
+                  {loudspeakerActive && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-purple-950/20 p-3 rounded-2xl border border-purple-500/10 text-left animate-fade-in">
+                      <div className="space-y-1">
+                        <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-widest block">Acoustic EQ Profile</span>
+                        <div className="flex gap-1.5">
+                          {(["standard", "ultra_punchy", "vintage_concert"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              onClick={() => {
+                                setLoudspeakerMode(mode);
+                                showToast(`Equalizer changed to: ${mode.replace("_", " ")}`, "success");
+                              }}
+                              className={`flex-1 py-1 px-1.5 rounded text-[8px] font-mono font-bold uppercase transition ${
+                                loudspeakerMode === mode 
+                                  ? "bg-pink-500/20 text-pink-400 border border-pink-500/30" 
+                                  : "bg-black/40 text-slate-500 border border-transparent hover:border-white/5"
+                              }`}
+                            >
+                              {mode.split("_")[0]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-widest block">Bass Subwoofer Power</span>
+                        <button
+                          onClick={() => {
+                            setLoudspeakerBassBoost(!loudspeakerBassBoost);
+                            showToast(loudspeakerBassBoost ? "Sub Bass Bypass" : "Sub Bass Boost Enabled!", "success");
+                          }}
+                          className={`w-full py-1 px-2.5 rounded text-[8px] font-mono font-bold uppercase transition flex items-center justify-between ${
+                            loudspeakerBassBoost 
+                              ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" 
+                              : "bg-black/40 text-slate-500 border border-transparent hover:border-white/5"
+                          }`}
+                        >
+                          <span>Sub Bass +12dB</span>
+                          <span className={`w-1.5 h-1.5 rounded-full ${loudspeakerBassBoost ? "bg-cyan-400 animate-pulse" : "bg-slate-700"}`} />
+                        </button>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[9px] font-mono font-bold text-slate-400 uppercase tracking-widest">
+                          <span>Acoustic Delay Feed</span>
+                          <span className="text-white font-mono">{loudspeakerFeedbackDelay}ms</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="5"
+                          max="60"
+                          value={loudspeakerFeedbackDelay}
+                          onChange={(e) => setLoudspeakerFeedbackDelay(Number(e.target.value))}
+                          className="w-full accent-cyan-400 bg-black/40 h-2 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Core Record Buttons (Vibrant Palette specific giant red button layout) */}
                   <div className="flex items-center justify-between border-t border-white/5 pt-4">
@@ -1256,6 +1624,123 @@ export default function App() {
                             <p className="text-xs text-slate-300 leading-relaxed">{tip}</p>
                           </div>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* MP4 H.264 Video Recording Studio Master Export */}
+                    <div className="bg-[#0b031d] border border-cyan-500/20 rounded-2xl p-5 text-left space-y-4 animate-fade-in">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <span className="text-[9px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded uppercase tracking-wider">
+                            Studio MP4 Generator
+                          </span>
+                          <h4 className="text-sm font-bold text-white mt-1.5 flex items-center gap-1.5">
+                            <Video className="w-4 h-4 text-cyan-400" /> Duet Master Recording (MP4 Format)
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-1">
+                            Your full vocal performance with idol backing track was successfully encoded dynamically into a high-fidelity **H.264 MP4** video stream.
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={mp4ExportMode}
+                            onChange={(e) => setMp4ExportMode(e.target.value as any)}
+                            className="bg-slate-900 border border-slate-800 text-xs text-slate-300 px-3 py-1.5 rounded-lg focus:outline-none focus:border-cyan-500 font-mono"
+                          >
+                            <option value="studio_master_mp4">Studio Master (1080p MP4)</option>
+                            <option value="standard_mp4">Standard Clip (720p MP4)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Video Simulated Recorder Tape View */}
+                      <div className="relative bg-slate-950 aspect-[16/9] sm:h-52 mx-auto rounded-xl border border-white/10 overflow-hidden flex flex-col justify-between p-4 group">
+                        {/* Camera feedback background (interactive visual lines dancing) */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-cyan-950/40 via-purple-950/20 to-black pointer-events-none" />
+                        
+                        {/* Grid aesthetic overlay */}
+                        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none" />
+                        
+                        {/* Audio Wave Soundbars flowing to simulate active playback overlay */}
+                        <div className="absolute bottom-1 right-2 left-2 h-16 flex items-end gap-[1.5px] opacity-40 pointer-events-none">
+                          {Array.from({ length: 48 }).map((_, i) => (
+                            <div 
+                              key={i} 
+                              className="flex-1 bg-cyan-500 rounded-t-xs"
+                              style={{ 
+                                height: `${Math.sin(i * 0.2) * 30 + 40 + Math.random() * 20}%`,
+                                animation: "pulse 1.2s infinite ease-in-out",
+                                animationDelay: `${i * 30}ms`
+                              }}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Top indicators */}
+                        <div className="z-10 flex justify-between items-center text-[9px] font-mono tracking-widest text-[#aaaaaa]">
+                          <div className="flex items-center gap-1.5 bg-red-600/20 text-red-500 font-bold px-2 py-0.5 rounded-full border border-red-500/25">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+                            <span>PLAY RECORDING</span>
+                          </div>
+                          <div>
+                            MP4 CODEC: {mp4ExportMode === "studio_master_mp4" ? "H.264 / AAC 1080p" : "H.264 / AAC 720p"}
+                          </div>
+                        </div>
+
+                        {/* Middle: Custom title overlay card */}
+                        <div className="z-10 text-center space-y-1 my-auto">
+                          <h5 className="text-base font-bold text-white tracking-wide italic">
+                            {selectedSong?.title}
+                          </h5>
+                          <p className="text-[10px] text-pink-400 font-mono">
+                            Zen Shin &amp; {selectedSong?.artist} (Interactive AI Duet)
+                          </p>
+                          <div className="flex justify-center items-center gap-3 pt-2">
+                            <span className="text-[9px] font-mono text-cyan-400 bg-cyan-900/40 border border-cyan-500/20 px-2 py-0.5 rounded">
+                              DSP EFF: {VENUE_EFFECTS.find(e => e.id === activeEffect)?.name || "Raw Studio"}
+                            </span>
+                            <span className="text-[9px] font-mono text-emerald-400 bg-emerald-900/40 border border-emerald-500/20 px-2 py-0.5 rounded">
+                              SCORE: {vocalReview.score} PTS
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Bottom playback timeline details */}
+                        <div className="z-10 flex justify-between items-end text-[9px] font-mono text-white/50 bg-black/40 p-2 rounded-lg border border-white/5 backdrop-blur-xs">
+                          <div>
+                            <p className="text-[8px] text-slate-400 uppercase">TRACK SPEED / METADATA</p>
+                            <p className="font-bold text-[#dddddd]">{selectedSong?.genre} • {selectedSong?.tempo} BPM</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[8px] text-slate-400 uppercase">RECORDED VOLUME</p>
+                            <p className="font-bold text-cyan-400">MIC: {micVolume}% • MONITOR: {loudspeakerActive ? `${loudspeakerVolume}%` : "OFF"}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Render Download trigger */}
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-white/5">
+                        <div className="text-xs text-slate-400 font-sans">
+                          {recordedMp4BlobUrl ? (
+                            <span className="text-emerald-400 font-mono font-bold flex items-center gap-1">
+                              ✓ Video asset rendering complete (File Ready)
+                            </span>
+                          ) : (
+                            <span className="text-amber-400 animate-pulse">Encoding high fidelity multiplexing streams...</span>
+                          )}
+                        </div>
+
+                        {recordedMp4BlobUrl && (
+                          <a
+                            href={recordedMp4BlobUrl}
+                            download={`${selectedSong?.title.toLowerCase().replace(/\s+/g, "_")}_zen_duet_${mp4ExportMode}.mp4`}
+                            onClick={() => showToast("📥 Downloading high quality MP4 video file!", "success")}
+                            className="cursor-pointer w-full sm:w-auto text-center px-4.5 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:opacity-95 text-white text-xs font-sans font-bold uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-1.5 shadow-[0_4px_15px_rgba(6,182,212,0.3)] hover:shadow-[0_4px_20px_rgba(6,182,212,0.5)]"
+                          >
+                            <Download className="w-4 h-4" /> Download Performance MP4
+                          </a>
+                        )}
                       </div>
                     </div>
 

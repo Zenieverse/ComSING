@@ -6,6 +6,21 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+/* Custom subtle pulse animation for virtual idol partner avatar */
+@keyframes subtle-idol-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0px rgba(244, 63, 94, 0));
+  }
+  50% {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.7));
+  }
+}
+.animate-idol-pulse {
+  animation: subtle-idol-pulse 1.6s infinite ease-in-out;
+}
+
 /* Custom scrollbar styles */
 .custom-scroll::-webkit-scrollbar {
   width: 6px;
