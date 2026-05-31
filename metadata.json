@@ -1,0 +1,10 @@
+{
+  "name": "ComSing",
+  "description": "Sing with your idols, build your VocalID, get real-time AI vocal coaching, and create AI-boosted covers and duets in a premium, futuristic music-tech playground.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
