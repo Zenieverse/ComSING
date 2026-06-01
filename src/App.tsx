@@ -36,7 +36,9 @@ import {
   Search,
   Speaker,
   Download,
-  Sliders
+  Sliders,
+  Share,
+  Edit3
 } from "lucide-react";
 import { Song, VocalID, PerformanceLog, Challenge, LeaderboardUser, DirectChat, VenueEffect } from "./types";
 import VocalIDView from "./components/VocalIDView";
@@ -67,8 +69,9 @@ export default function App() {
   const [vocalID, setVocalID] = useState<VocalID | null>(null);
   const [userProfile, setUserProfile] = useState(() => {
     const savedAvatar = typeof window !== "undefined" ? localStorage.getItem("comsing_avatar_url") : null;
+    const savedUsername = typeof window !== "undefined" ? localStorage.getItem("comsing_username") : null;
     return {
-      username: "Zen",
+      username: savedUsername || "Zen Platform Innovator",
       email: "zenieverse@gmail.com",
       country: "United States",
       ageGroup: "22-25",
@@ -81,6 +84,9 @@ export default function App() {
       avatarUrl: savedAvatar || `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23ec4899"/><stop offset="100%" stop-color="%238b5cf6"/></linearGradient></defs><rect width="100" height="100" fill="%230d071c"/><circle cx="50" cy="45" r="20" fill="url(%23g)"/><path d="M15,85 C15,65 30,58 50,58 C70,58 85,65 85,85" fill="none" stroke="url(%23g)" stroke-width="6" stroke-linecap="round"/></svg>`
     };
   });
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState("");
 
   // State for purchased shop features / backdrops / filters
   const [purchasedItems, setPurchasedItems] = useState<string[]>([]);
@@ -95,6 +101,23 @@ export default function App() {
     toastTimeoutRef.current = setTimeout(() => {
       setToast(null);
     }, 4000);
+  };
+
+  const handleFinishEditingName = () => {
+    setIsEditingName(false);
+    const trimmed = editNameValue.trim();
+    if (trimmed) {
+      setUserProfile((prev) => ({
+        ...prev,
+        username: trimmed,
+      }));
+      try {
+        localStorage.setItem("comsing_username", trimmed);
+      } catch (err) {
+        console.error("Storage error:", err);
+      }
+      showToast("👤 Username updated successfully!", "success");
+    }
   };
 
   // Performance simulation states
@@ -127,6 +150,20 @@ export default function App() {
   const [mp4ExportMode, setMp4ExportMode] = useState<"standard_mp4" | "studio_master_mp4">("studio_master_mp4");
   const [recordedMp4BlobUrl, setRecordedMp4BlobUrl] = useState<string | null>(null);
   const [isExportingMp4, setIsExportingMp4] = useState(false);
+
+  // Vocal signature player states
+  const [playingIdolSignature, setPlayingIdolSignature] = useState<string | null>(null);
+  const signatureAudioCtxRef = useRef<AudioContext | null>(null);
+  const signatureTimeoutRef = useRef<any>(null);
+
+  // Integrated Live Duet/Accompaniment Synth states and refs to ensure audibility without mic requirements
+  const recordingAudioCtxRef = useRef<AudioContext | null>(null);
+  const backingMusicTimerRef = useRef<any>(null);
+  const recordingMasterGainRef = useRef<GainNode | null>(null);
+  const currentLyricIndexRef = useRef<number>(0);
+
+  // Fast audio meter simulated state for reactive visualizer bars
+  const [simulatedAudioVolume, setSimulatedAudioVolume] = useState<number>(15);
 
   // Gemini feedback structure
   const [vocalReviewLoading, setVocalReviewLoading] = useState(false);
@@ -183,6 +220,45 @@ export default function App() {
     }
   }, [vocalID]);
 
+  // Sync core state with references
+  useEffect(() => {
+    currentLyricIndexRef.current = currentLyricIndex;
+  }, [currentLyricIndex]);
+
+  // Handle dynamic simulated audio volume fluctuations for the visualizer
+  useEffect(() => {
+    let animId: any;
+    const updateVibe = () => {
+      setSimulatedAudioVolume((prev) => {
+        if (recordingState === "recording") {
+          // Energetic pulse when recording/dueting: 45% - 100%
+          const target = Math.floor(Math.random() * 55) + 45;
+          return prev + (target - prev) * 0.4; // rapid response
+        } else if (recordingState === "playing") {
+          // Rhythmic bounce when listening: 30% - 70%
+          const target = Math.floor(Math.random() * 40) + 30;
+          return prev + (target - prev) * 0.25;
+        } else {
+          // Subtle idle ambient neon hum / standby breathing: 10% - 20%
+          const now = Date.now();
+          const target = 15 + Math.sin(now / 300) * 5;
+          return prev + (target - prev) * 0.15;
+        }
+      });
+      animId = setTimeout(updateVibe, 80);
+    };
+    updateVibe();
+    return () => clearTimeout(animId);
+  }, [recordingState]);
+
+  // Handle dynamic loudspeaker volume & mute alterations during active recordings/playback
+  useEffect(() => {
+    if (recordingAudioCtxRef.current && recordingMasterGainRef.current) {
+      const vol = loudspeakerActive ? (loudspeakerVolume / 100) * 0.25 : 0;
+      recordingMasterGainRef.current.gain.setValueAtTime(vol, recordingAudioCtxRef.current.currentTime);
+    }
+  }, [loudspeakerActive, loudspeakerVolume]);
+
   // Handle record simulation timer
   useEffect(() => {
     if (recordingState === "recording") {
@@ -191,7 +267,16 @@ export default function App() {
           const nextSec = prev + 1;
           // Increment lyric index every 5 seconds for demonstration
           if (nextSec % 5 === 0 && selectedSong) {
-            setCurrentLyricIndex((idx) => (idx + 1) % selectedSong.lyrics.length);
+            setCurrentLyricIndex((idx) => {
+              if (idx >= selectedSong.lyrics.length - 1) {
+                // Auto-stop recording and evaluate once we reached the end of the song
+                setTimeout(() => {
+                  handleStopRecord();
+                }, 500);
+                return idx;
+              }
+              return idx + 1;
+            });
           }
           // Simulate minute fluctuating pitch/accuracy metrics
           setCurPitchAccuracy(() => Math.floor(Math.random() * 8) + 89);
@@ -219,6 +304,449 @@ export default function App() {
       if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);
     };
   }, [recordingState, selectedSong]);
+
+  // Cleanup signature audio and recording backing music on unmount
+  useEffect(() => {
+    return () => {
+      if (signatureTimeoutRef.current) clearTimeout(signatureTimeoutRef.current);
+      if (signatureAudioCtxRef.current) {
+        try {
+          signatureAudioCtxRef.current.close();
+        } catch (e) {}
+      }
+      stopBackingMusic();
+    };
+  }, []);
+
+  const stopIdolSignature = () => {
+    if (signatureTimeoutRef.current) {
+      clearTimeout(signatureTimeoutRef.current);
+      signatureTimeoutRef.current = null;
+    }
+    if (signatureAudioCtxRef.current) {
+      try {
+        signatureAudioCtxRef.current.close();
+      } catch (e) {}
+      signatureAudioCtxRef.current = null;
+    }
+    setPlayingIdolSignature(null);
+  };
+
+  const playIdolSignature = (artistName: string) => {
+    // If already playing for this specific artist, stop it
+    if (playingIdolSignature === artistName) {
+      stopIdolSignature();
+      return;
+    }
+
+    // Stop and reset any current playback
+    stopIdolSignature();
+    setPlayingIdolSignature(artistName);
+
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) {
+        setPlayingIdolSignature(null);
+        return;
+      }
+
+      const ctx = new AudioCtx();
+      signatureAudioCtxRef.current = ctx;
+
+      // Unblock context synchronously inside click gesture context (critical for iOS/iPad/Safari)
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(e => console.warn("AudioContext resume failed on iPad", e));
+      }
+
+      // Force ringer/silent switch bypass on iOS/iPadOS
+      unblockIpadLoudspeaker();
+
+      const isLuna = artistName.toLowerCase().includes("luna");
+      const isAria = artistName.toLowerCase().includes("aria");
+
+      // Custom high-fidelity 3-second synthesis sound signature function
+      const playTone = (freq: number, start: number, duration: number, type: "sine" | "triangle" | "sawtooth" | "square" = "sine", gainVal = 0.15) => {
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, start);
+        
+        // Add futuristic pitch vibrato
+        if (isLuna || isAria) {
+          osc.frequency.linearRampToValueAtTime(freq * 1.015, start + duration * 0.4);
+          osc.frequency.linearRampToValueAtTime(freq * 0.985, start + duration * 0.8);
+          osc.frequency.linearRampToValueAtTime(freq, start + duration);
+        }
+
+        // Gain envelope for smooth fade in/out
+        gainNode.gain.setValueAtTime(0, start);
+        gainNode.gain.linearRampToValueAtTime(gainVal, start + 0.08);
+        gainNode.gain.setValueAtTime(gainVal, start + duration - 0.12);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        osc.start(start);
+        osc.stop(start + duration);
+      };
+
+      if (isLuna) {
+        // Luna: Cyber Synthpop (Rising, sparkling minor-seventh synth arpeggio)
+        const base = 261.63; // C4
+        playTone(base, ctx.currentTime, 0.5, "triangle", 0.12);
+        playTone(base * 1.189, ctx.currentTime + 0.3, 0.5, "triangle", 0.12); // Eb4
+        playTone(base * 1.5, ctx.currentTime + 0.6, 0.5, "triangle", 0.12); // G4
+        playTone(base * 1.782, ctx.currentTime + 0.9, 0.5, "sine", 0.15); // Bb4
+        playTone(base * 2.0, ctx.currentTime + 1.2, 1.4, "sine", 0.15); // C5 (holding)
+      } else if (isAria) {
+        // Aria: Bright Kawaii J-Pop bells (Glissando pentatonic scale chime)
+        const base = 293.66; // D4
+        playTone(base, ctx.currentTime, 0.35, "sine", 0.15);
+        playTone(base * 1.125, ctx.currentTime + 0.25, 0.35, "sine", 0.15); // E4
+        playTone(base * 1.333, ctx.currentTime + 0.5, 0.35, "sine", 0.15); // G4
+        playTone(base * 1.5, ctx.currentTime + 0.75, 0.35, "sine", 0.12); // A4
+        playTone(base * 2.0, ctx.currentTime + 1.0, 1.5, "sine", 0.18); // D5 (shimmering reverb-like)
+      } else {
+        // Warm generic acoustic/r&b hum
+        const base = 220.00; // A3
+        playTone(base, ctx.currentTime, 0.6, "sine", 0.18);
+        playTone(base * 1.5, ctx.currentTime + 0.4, 0.6, "sine", 0.16);
+        playTone(base * 1.875, ctx.currentTime + 0.8, 1.8, "sine", 0.14);
+      }
+
+      // Automatically reset states after exactly 3.0 seconds
+      signatureTimeoutRef.current = setTimeout(() => {
+        setPlayingIdolSignature(null);
+      }, 3000);
+
+    } catch (e) {
+      console.error("Audio Context boot failure", e);
+      setPlayingIdolSignature(null);
+    }
+  };
+
+  const handleShareIdolProfile = async (artistName: string) => {
+    const formattedArtist = encodeURIComponent(artistName);
+    const mockProfileUrl = `${window.location.origin || "https://ai.studio"}/?idol=${formattedArtist}`;
+    
+    const shareText = `🎵 Audition ${artistName}'s high-fidelity AI-synthesized vocal timbre and performance specifications in our Cyber Duet and Karaoke Studio!`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${artistName} - Vocal Profile`,
+          text: shareText,
+          url: mockProfileUrl,
+        });
+        showToast(`📢 Shared ${artistName}'s vocal profile!`, "success");
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          // Inside preview iframe frameworks, navigator.share can error out due to iframe context permissions. 
+          // Always fall back graceful
+          try {
+            await navigator.clipboard.writeText(mockProfileUrl);
+            showToast("🔗 Vocal profile link copied to clipboard instead!", "success");
+          } catch (e) {
+            showToast(`Vocal Profile: ${artistName}`, "info");
+          }
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(mockProfileUrl);
+        showToast("🔗 Vocal profile link copied to clipboard!", "success");
+      } catch (err) {
+        showToast(`Profile Link: ${mockProfileUrl}`, "info");
+      }
+    }
+  };
+
+  const handleInviteFriend = async (idolName: string) => {
+    const uniqueId = `collab-${Math.random().toString(36).substring(2, 11)}`;
+    const collabUrl = `${window.location.origin}/?collab=${uniqueId}&idol=${encodeURIComponent(idolName)}`;
+    
+    const shareText = `🎤 Hey! Sing an interactive duet with me and virtual AI idol ${idolName}! Open our digital karaoke room here:`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Karaoke Duet with ${idolName}`,
+          text: shareText,
+          url: collabUrl,
+        });
+        showToast(`💌 Collaboration invite shared!`, "success");
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          try {
+            await navigator.clipboard.writeText(collabUrl);
+            showToast(`🔗 Copied ${idolName} collab invite to clipboard!`, "success");
+          } catch (e) {
+            showToast(`Collaboration Link: ${collabUrl}`, "info");
+          }
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(collabUrl);
+        showToast(`🔗 Copied ${idolName} collab invite to clipboard!`, "success");
+      } catch (err) {
+        showToast(`Collaboration Link: ${collabUrl}`, "info");
+      }
+    }
+  };
+
+  const unblockIpadLoudspeaker = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        const dummyCtx = new AudioCtx();
+        if (dummyCtx.state === "suspended") {
+          dummyCtx.resume().catch(() => {});
+        }
+        const osc = dummyCtx.createOscillator();
+        const gain = dummyCtx.createGain();
+        gain.gain.setValueAtTime(0.001, dummyCtx.currentTime);
+        osc.connect(gain);
+        gain.connect(dummyCtx.destination);
+        osc.start(0);
+        osc.stop(0.1);
+      }
+      const audio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA");
+      audio.volume = 0.01;
+      audio.play().catch(() => {});
+    } catch (e) {
+      console.warn("Loudspeaker configuration bypass", e);
+    }
+  };
+
+  const handleSharePerformance = async () => {
+    if (!selectedSong || !vocalReview) {
+      showToast("No performance report available yet to share!", "warning");
+      return;
+    }
+    const score = vocalReview.score;
+    const rating = vocalReview.overallRating;
+    const formattedSong = encodeURIComponent(selectedSong.title);
+    const mockRefUrl = `${window.location.origin}/?song=${formattedSong}&score=${score}`;
+    
+    const shareText = `🎤 I scored an amazing ${score} PTS (${rating}) on "${selectedSong.title}" as a duet with ${selectedSong.artist} in the Cyber Duet and Karaoke Studio! 🏆 Can you beat my high score? Play now:`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Karaoke Duet Score: ${score} PTS - ${selectedSong.title}`,
+          text: shareText,
+          url: mockRefUrl,
+        });
+        showToast("📢 Performance score shared successfully!", "success");
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          try {
+            await navigator.clipboard.writeText(`${shareText} ${mockRefUrl}`);
+            showToast("🔗 Performance score copied to clipboard!", "success");
+          } catch (e) {
+            showToast(`Scored ${score} PTS on ${selectedSong.title}!`, "info");
+          }
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(`${shareText} ${mockRefUrl}`);
+        showToast("🔗 Performance score copied to clipboard!", "success");
+      } catch (err) {
+        showToast(`Scored ${score} PTS on ${selectedSong.title}!`, "info");
+      }
+    }
+  };
+
+  const stopBackingMusic = () => {
+    if (backingMusicTimerRef.current) {
+      clearInterval(backingMusicTimerRef.current);
+      backingMusicTimerRef.current = null;
+    }
+    if (recordingAudioCtxRef.current) {
+      try {
+        recordingAudioCtxRef.current.close();
+      } catch (e) {}
+      recordingAudioCtxRef.current = null;
+    }
+    recordingMasterGainRef.current = null;
+  };
+
+  const startBackingMusic = (song: Song) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      recordingAudioCtxRef.current = ctx;
+
+      // Unblock context synchronously inside click gesture context (critical for iOS/iPad/Safari)
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(e => console.warn("Backing Music AudioContext resume failed on iPad", e));
+      }
+
+      // Force ringer/silent switch bypass on iOS/iPadOS
+      unblockIpadLoudspeaker();
+
+      // Create a master gain node
+      const masterGain = ctx.createGain();
+      // Set initial volume based on loudspeaker settings (with comfortable 0.2 scale limit)
+      const vol = loudspeakerActive ? (loudspeakerVolume / 100) * 0.2 : 0;
+      masterGain.gain.setValueAtTime(vol, ctx.currentTime);
+      masterGain.connect(ctx.destination);
+      recordingMasterGainRef.current = masterGain;
+
+      let step = 0;
+
+      backingMusicTimerRef.current = setInterval(() => {
+        if (!recordingAudioCtxRef.current || ctx.state === "closed") return;
+        
+        // Ensure context is running (comply with browser user interaction gesture audio unlock)
+        if (ctx.state === "suspended") {
+          ctx.resume();
+        }
+
+        const now = ctx.currentTime;
+        const chordIndex = Math.floor(step / 4) % 4;
+
+        // 1. DYNAMIC CHORD ACCOMPANIMENT
+        if (step % 2 === 0) {
+          let frequencies: number[] = [];
+          if (song.title.toLowerCase().includes("lucky")) {
+            // C -> Am -> F -> G progression for "Lucky"
+            const progressions = [
+              [261.63, 329.63, 392.00], // C4, E4, G4 (C Major)
+              [220.00, 261.63, 329.63], // A3, C4, E4 (A minor)
+              [174.61, 220.00, 261.63], // F3, A3, C4 (F Major)
+              [196.00, 246.94, 293.66], // G3, B3, D4 (G Major)
+            ];
+            frequencies = progressions[chordIndex];
+          } else {
+            // General Pop/Duet: Am -> F -> C -> G
+            const progressions = [
+              [220.00, 261.63, 329.63], // Am
+              [174.61, 220.00, 261.63], // F
+              [261.63, 329.63, 392.00], // C
+              [196.00, 246.94, 293.66], // G
+            ];
+            frequencies = progressions[chordIndex];
+          }
+
+          frequencies.forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const g = ctx.createGain();
+            
+            osc.type = "sine";
+            // Use comfortable warm sub bass layer for base frequency
+            const finalFreq = idx === 0 ? freq / 2 : freq; 
+            osc.frequency.setValueAtTime(finalFreq, now);
+            
+            // Soft envelope transition
+            g.gain.setValueAtTime(0, now);
+            g.gain.linearRampToValueAtTime(0.04, now + 0.05);
+            g.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
+            
+            osc.connect(g);
+            g.connect(masterGain);
+            
+            osc.start(now);
+            osc.stop(now + 0.5);
+          });
+        }
+
+        // 2. TIMING METRONOME / RHYTHM BEAT GUIDELINE
+        if (step % 4 === 0) {
+          // Soft kick drum sweep
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.frequency.setValueAtTime(140, now);
+          osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.12);
+          g.gain.setValueAtTime(0.1, now);
+          g.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+          osc.connect(g);
+          g.connect(masterGain);
+          osc.start(now);
+          osc.stop(now + 0.12);
+        } else if (step % 2 === 1) {
+          // Soft high-hat click
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(9000, now);
+          g.gain.setValueAtTime(0.01, now);
+          g.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+          osc.connect(g);
+          g.connect(masterGain);
+          osc.start(now);
+          osc.stop(now + 0.04);
+        }
+
+        // 3. SYNTHESIZED PARTNER LEAD VOCALS
+        const curLyIdx = currentLyricIndexRef.current;
+        const activeDuetPart = song?.duetParts?.[curLyIdx];
+        const isIdolActive = activeDuetPart && (activeDuetPart.sender === "idol" || activeDuetPart.sender === "both");
+
+        if (isIdolActive) {
+          const isLuna = song.artist.toLowerCase().includes("luna");
+          const isAria = song.artist.toLowerCase().includes("aria");
+
+          // Pentatonic melodic structures to harmonize with background progressions
+          const lunaMelodies = [523.25, 587.33, 659.25, 783.99, 880.00]; // C5, D5, E5, G5, A5
+          const ariaMelodies = [587.33, 659.25, 740.00, 880.00, 987.77]; // D5, E5, F#5, A5, B5
+          const defaultMelodies = [392.00, 440.00, 523.25, 587.33, 659.25]; // G4, A4, C5, D5, E5
+
+          let melodies = defaultMelodies;
+          if (isLuna) melodies = lunaMelodies;
+          else if (isAria) melodies = ariaMelodies;
+
+          const chosenNote = melodies[(step + chordIndex * 3) % melodies.length];
+
+          const voiceOsc = ctx.createOscillator();
+          const voiceGain = ctx.createGain();
+
+          voiceOsc.type = isLuna ? "triangle" : "sine";
+          voiceOsc.frequency.setValueAtTime(chosenNote, now);
+          
+          // Realistic pitch slide transitions
+          voiceOsc.frequency.linearRampToValueAtTime(chosenNote * 1.008, now + 0.08);
+          voiceOsc.frequency.linearRampToValueAtTime(chosenNote * 0.992, now + 0.18);
+          voiceOsc.frequency.linearRampToValueAtTime(chosenNote, now + 0.25);
+
+          voiceGain.gain.setValueAtTime(0, now);
+          const vocalVol = isLuna ? 0.07 : isAria ? 0.08 : 0.06;
+          voiceGain.gain.linearRampToValueAtTime(vocalVol, now + 0.03);
+          voiceGain.gain.setValueAtTime(vocalVol, now + 0.18);
+          voiceGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+
+          // Sub/overtone thickener
+          const overtoneOsc = ctx.createOscillator();
+          const overtoneGain = ctx.createGain();
+          overtoneOsc.type = "sine";
+          overtoneOsc.frequency.setValueAtTime(chosenNote * 1.5, now);
+          overtoneGain.gain.setValueAtTime(0, now);
+          overtoneGain.gain.linearRampToValueAtTime(vocalVol * 0.35, now + 0.03);
+          overtoneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+
+          voiceOsc.connect(voiceGain);
+          voiceGain.connect(masterGain);
+          overtoneOsc.connect(overtoneGain);
+          overtoneGain.connect(masterGain);
+
+          voiceOsc.start(now);
+          voiceOsc.stop(now + 0.25);
+          overtoneOsc.start(now);
+          overtoneOsc.stop(now + 0.25);
+        }
+
+        step++;
+      }, 250);
+
+    } catch (err) {
+      console.error("Backing Music setup failure", err);
+    }
+  };
 
   const fetchSongs = async () => {
     try {
@@ -264,11 +792,18 @@ export default function App() {
     setCinematicStageDetails(null);
     setRecordedMp4BlobUrl(null);
     setActiveTab("studio");
+    
+    // Start audible backing track context safely triggered via user click gesture
+    startBackingMusic(selectedSong);
   };
 
   // Recording stops -> Evaluate with AI Coach
   const handleStopRecord = async () => {
     if (!selectedSong) return;
+    
+    // Stop the live backing music context cleanly
+    stopBackingMusic();
+    
     setRecordingState("review");
     setVocalReviewLoading(true);
     setIsExportingMp4(true);
@@ -445,7 +980,12 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0a0515] text-white font-sans overflow-x-hidden antialiased">
+    <div 
+      onClick={() => {
+        unblockIpadLoudspeaker();
+      }}
+      className="flex min-h-screen flex-col bg-[#0a0515] text-white font-sans overflow-x-hidden antialiased"
+    >
       {/* 1. TOP HEADER NAVIGATION BAR */}
       <nav id="top-nav" className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-[#120b24]">
         <div id="brand-logo-container" className="flex items-center gap-3">
@@ -565,9 +1105,36 @@ export default function App() {
         </div>
 
         <div id="user-pills" className="flex items-center gap-3">
-          <div className="text-right hidden sm:block">
-            <p className="text-xs font-bold text-white">{userProfile.username}</p>
-            <p className="text-[10px] text-slate-400">{userProfile.email}</p>
+          <div className="text-right hidden sm:block min-w-[140px]">
+            {isEditingName ? (
+              <input
+                type="text"
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onBlur={handleFinishEditingName}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleFinishEditingName();
+                  if (e.key === "Escape") setIsEditingName(false);
+                }}
+                className="bg-slate-950 border border-pink-500/50 text-white rounded px-2 py-0.5 text-xs focus:ring-1 focus:ring-pink-500 font-bold focus:outline-none w-44 text-right inline-block"
+                autoFocus
+              />
+            ) : (
+              <div 
+                onClick={() => {
+                  setEditNameValue(userProfile.username);
+                  setIsEditingName(true);
+                }}
+                className="cursor-pointer group flex items-center justify-end gap-1.5"
+                title="Click to edit name"
+              >
+                <p className="text-xs font-bold text-white group-hover:text-pink-400 transition-colors uppercase tracking-wide">
+                  {userProfile.username}
+                </p>
+                <Edit3 className="w-2.5 h-2.5 text-slate-400 group-hover:text-pink-400 transition-colors" />
+              </div>
+            )}
+            <p className="text-[9px] text-slate-400 tracking-wider font-mono">{userProfile.email}</p>
           </div>
           <div 
             onClick={() => document.getElementById("avatar-upload-file-picker")?.click()}
@@ -736,17 +1303,35 @@ export default function App() {
                   <p className="text-xs text-slate-300 leading-relaxed">
                     Test your dynamic range score and accuracy on virtual stage networks! Instantly build your secure VocalID DNA footprint and compare notes directly on global lead networks.
                   </p>
-                  <button
-                    onClick={() => {
-                      if (songs.length > 0) {
-                        setSelectedSong(songs[0]);
-                        handleStartRecord("Duet");
-                      }
-                    }}
-                    className="cursor-pointer px-5 py-2.5 bg-gradient-to-r from-pink-600 to-red-500 text-white font-sans font-bold rounded-xl text-xs uppercase tracking-widest hover:opacity-90 transition shadow-lg shadow-pink-900/40"
-                  >
-                    🚀 Enter Battle Stage
-                  </button>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => {
+                        if (songs.length > 0) {
+                          setSelectedSong(songs[0]);
+                          handleStartRecord("Duet");
+                        }
+                      }}
+                      className="cursor-pointer px-5 py-2.5 bg-gradient-to-r from-pink-600 to-red-500 text-white font-sans font-bold rounded-xl text-xs uppercase tracking-widest hover:opacity-90 transition shadow-lg shadow-pink-900/40"
+                    >
+                      🚀 Enter Battle Stage
+                    </button>
+                    <button
+                      onClick={() => {
+                        const luckySong = songs.find(s => s.title.toLowerCase().includes("lucky"));
+                        if (luckySong) {
+                          setSelectedSong(luckySong);
+                          handleStartRecord("Duet");
+                          showToast("👫 Starting featured duet session for 'Lucky'!", "success");
+                        } else if (songs.length > 0) {
+                          setSelectedSong(songs[0]);
+                          handleStartRecord("Duet");
+                        }
+                      }}
+                      className="cursor-pointer px-5 py-2.5 bg-[#4c1d95]/40 hover:bg-[#4c1d95]/70 border border-[#c084fc]/30 text-white font-sans font-bold rounded-xl text-xs uppercase tracking-widest transition shadow-lg shadow-purple-950/40"
+                    >
+                      👫 Duet 'Lucky'
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -763,6 +1348,7 @@ export default function App() {
                       alert(`Loading ${artistName}'s dynamic duel sequence... Please pick a song below.`);
                     }
                   }}
+                  onInviteFriend={handleInviteFriend}
                 />
               </div>
 
@@ -951,6 +1537,12 @@ export default function App() {
                           {recordingState === "recording" ? "DUET STAGE ONLINE" : recordingState === "playing" ? "PLAYBACK MONITOR" : "MIC MUTED / IDLE"}
                         </span>
                         
+                        {recordingState === "recording" && (
+                          <span className="text-[8px] font-mono font-bold text-cyan-400 bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded uppercase tracking-wider animate-pulse text-right">
+                            🔊 Live Synth Backup Active (Mic optional)
+                          </span>
+                        )}
+                        
                         <div className="flex items-center gap-1.5 bg-[#120b24] p-1.5 rounded-lg border border-white/5 text-[10px] text-slate-400">
                           <span>Backdrop:</span>
                           <select
@@ -1035,18 +1627,37 @@ export default function App() {
                         </div>
 
                         {/* Dual Visualizer Pulsing waveform */}
-                        <div className="w-full max-w-sm h-24 flex items-end justify-between gap-1 bg-slate-950/40 p-3 rounded-2xl border border-white/5">
+                        <div 
+                          className="w-full max-w-sm h-24 flex items-end justify-between gap-1 bg-slate-950/40 p-3 rounded-2xl border border-white/5 transition-all duration-150"
+                          style={{
+                            boxShadow: `0 0 ${Math.floor(simulatedAudioVolume / 4) + 4}px rgba(${recordingState === "recording" ? "244,63,94" : "168,85,247"}, ${0.1 + (simulatedAudioVolume / 200)})`
+                          }}
+                        >
                           <div className="flex-1 h-full flex items-end gap-[2px]">
-                            {selectedSong.audioWaveform.slice(0, 8).map((val, idx) => (
-                              <div
-                                key={idx}
-                                className="flex-1 bg-cyan-400 rounded-t-sm transition-all"
-                                style={{
-                                  height: recordingState === "recording" ? `${Math.floor(Math.random() * 50) + 40}%` : `${val}%`,
-                                  opacity: 0.5 + (val / 100) * 0.5
-                                }}
-                              />
-                            ))}
+                            {selectedSong.audioWaveform.slice(0, 8).map((val, idx) => {
+                              const multiplier = (simulatedAudioVolume / 100);
+                              const dynamicHeight = Math.max(
+                                8, 
+                                Math.min(
+                                  100, 
+                                  recordingState === "recording" 
+                                    ? Math.floor((val * 0.4 + Math.random() * 30 + 30) * multiplier)
+                                    : Math.floor(val * (0.3 + multiplier * 0.7))
+                                )
+                              );
+                              return (
+                                <div
+                                  key={idx}
+                                  className="flex-1 bg-cyan-400 rounded-t-lg transition-all duration-100"
+                                  style={{
+                                    height: `${dynamicHeight}%`,
+                                    opacity: 0.4 + multiplier * 0.6,
+                                    transform: `scaleY(${1 + (simulatedAudioVolume / 300)})`,
+                                    transformOrigin: "bottom"
+                                  }}
+                                />
+                              );
+                            })}
                           </div>
                           <div className={`w-16 h-16 rounded-full flex items-center justify-center relative shrink-0 transition-all duration-300 ${
                             purchasedItems.includes("anime-halo")
@@ -1064,16 +1675,30 @@ export default function App() {
                             )}
                           </div>
                           <div className="flex-1 h-full flex items-end gap-[2px]">
-                            {selectedSong.audioWaveform.slice(8, 16).map((val, idx) => (
-                              <div
-                                key={idx}
-                                className="flex-1 bg-pink-400 rounded-t-sm transition-all"
-                                style={{
-                                  height: recordingState === "recording" ? `${Math.floor(Math.random() * 60) + 30}%` : `${val}%`,
-                                  opacity: 0.5 + (val / 100) * 0.5
-                                }}
-                              />
-                            ))}
+                            {selectedSong.audioWaveform.slice(8, 16).map((val, idx) => {
+                              const multiplier = (simulatedAudioVolume / 100);
+                              const dynamicHeight = Math.max(
+                                8, 
+                                Math.min(
+                                  100, 
+                                  recordingState === "recording" 
+                                    ? Math.floor((val * 0.4 + Math.random() * 40 + 20) * multiplier)
+                                    : Math.floor(val * (0.3 + multiplier * 0.7))
+                                )
+                              );
+                              return (
+                                <div
+                                  key={idx}
+                                  className="flex-1 bg-pink-400 rounded-t-lg transition-all duration-100"
+                                  style={{
+                                    height: `${dynamicHeight}%`,
+                                    opacity: 0.4 + multiplier * 0.6,
+                                    transform: `scaleY(${1 + (simulatedAudioVolume / 300)})`,
+                                    transformOrigin: "bottom"
+                                  }}
+                                />
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -1157,6 +1782,22 @@ export default function App() {
                           </div>
                         )}
                       </div>
+
+                      {/* FLOATING SHARE PERFORMANCE BUTTON - Only visible in "review" state */}
+                      {recordingState === "review" && (
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 animate-bounce">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSharePerformance();
+                            }}
+                            className="cursor-pointer px-6 py-3 bg-gradient-to-r from-cyan-400 via-purple-600 to-pink-500 hover:from-cyan-300 hover:via-purple-500 hover:to-pink-400 text-white font-sans font-black rounded-full text-xs uppercase tracking-widest hover:scale-105 active:scale-95 transition-all duration-300 shadow-[0_0_25px_rgba(236,72,153,0.7)] flex items-center gap-2 border-2 border-white/30 whitespace-nowrap"
+                          >
+                            <Share className="w-4 h-4 text-white" /> Share Performance Score
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Bottom Layer overlay - idol partner details */}
@@ -1180,13 +1821,51 @@ export default function App() {
 
                             {/* Floating details tooltip on hover of the avatar / virtual partner tag container */}
                             <div className="absolute bottom-full left-0 mb-3 w-64 bg-slate-950/95 border border-pink-500/40 rounded-2xl p-4 shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/idol:opacity-100 group-hover/idol:translate-y-0 group-hover/idol:pointer-events-auto transition-all duration-300 z-50 backdrop-blur-lg">
-                              <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/5">
-                                <div className="w-6 h-6 rounded-lg bg-pink-500/20 flex items-center justify-center text-[10px] font-bold text-pink-400">
-                                  {selectedSong.artist[0]}
+                              <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-white/5">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded-lg bg-pink-500/20 flex items-center justify-center text-[10px] font-bold text-pink-400">
+                                    {selectedSong.artist[0]}
+                                  </div>
+                                  <div>
+                                    <h5 className="text-xs font-bold text-white leading-none">{selectedSong.artist}</h5>
+                                    <span className="text-[8px] font-mono font-bold text-pink-400 uppercase tracking-widest">Idol Spec Sheet</span>
+                                  </div>
                                 </div>
-                                <div>
-                                  <h5 className="text-xs font-bold text-white leading-none">{selectedSong.artist}</h5>
-                                  <span className="text-[8px] font-mono font-bold text-pink-400 uppercase tracking-widest">Idol Spec Sheet</span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      playIdolSignature(selectedSong.artist);
+                                    }}
+                                    className={`cursor-pointer px-1.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all duration-200 flex items-center gap-1 shrink-0 ${
+                                      playingIdolSignature === selectedSong.artist
+                                        ? "bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse"
+                                        : "bg-pink-500/20 text-pink-300 border border-pink-500/30 hover:bg-pink-500/40"
+                                    }`}
+                                  >
+                                    {playingIdolSignature === selectedSong.artist ? (
+                                      <>
+                                        <Square className="w-2 h-2 fill-current animate-pulse" /> Stop
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Play className="w-2 h-2 fill-current" /> Play
+                                      </>
+                                    )}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleShareIdolProfile(selectedSong.artist);
+                                    }}
+                                    className="cursor-pointer px-1.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase bg-pink-500/10 text-pink-300 border border-pink-500/20 hover:bg-pink-500/20 hover:border-pink-500/40 transition-all duration-200 flex items-center gap-1 shrink-0"
+                                    title="Share Idol Vocal Profile"
+                                  >
+                                    <Share className="w-2.5 h-2.5" /> Share
+                                  </button>
                                 </div>
                               </div>
                               <div className="space-y-2 text-[10px] font-mono">

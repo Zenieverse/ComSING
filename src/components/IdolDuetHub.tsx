@@ -1,5 +1,5 @@
 import React from "react";
-import { Mic2, Flame, Award, Heart, CheckCircle2, UserCheck } from "lucide-react";
+import { Mic2, Flame, Award, Heart, CheckCircle2, UserCheck, UserPlus } from "lucide-react";
 
 interface Idol {
   id: string;
@@ -67,9 +67,10 @@ const IDOLS: Idol[] = [
 
 interface IdolDuetHubProps {
   onSelectSongByIdolArtist: (artistName: string) => void;
+  onInviteFriend: (idolName: string) => void;
 }
 
-export default function IdolDuetHub({ onSelectSongByIdolArtist }: IdolDuetHubProps) {
+export default function IdolDuetHub({ onSelectSongByIdolArtist, onInviteFriend }: IdolDuetHubProps) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -135,12 +136,22 @@ export default function IdolDuetHub({ onSelectSongByIdolArtist }: IdolDuetHubPro
                 </span>
               </div>
 
-              <button
-                onClick={() => onSelectSongByIdolArtist(idol.name)}
-                className="cursor-pointer w-full py-2 bg-slate-950 group-hover:bg-purple-600/10 border border-slate-800 group-hover:border-purple-500/40 text-xs font-sans text-slate-300 group-hover:text-white font-medium rounded-lg transition-all duration-300 flex items-center justify-center gap-1.5"
-              >
-                <UserCheck className="w-3.5 h-3.5" /> Select Duet Catalog
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSelectSongByIdolArtist(idol.name)}
+                  className="cursor-pointer py-2 px-1 bg-slate-950 hover:bg-purple-600/10 border border-slate-800 hover:border-purple-500/40 text-[10px] font-sans text-slate-300 hover:text-white font-medium rounded-lg transition-all duration-300 flex items-center justify-center gap-1"
+                >
+                  <UserCheck className="w-3.5 h-3.5" /> Select Duet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onInviteFriend(idol.name)}
+                  className="cursor-pointer py-2 px-1 bg-purple-600/15 hover:bg-purple-600/35 border border-purple-500/25 hover:border-purple-500/50 text-[10px] font-sans text-purple-200 hover:text-white font-semibold rounded-lg transition-all duration-300 flex items-center justify-center gap-1"
+                >
+                  <UserPlus className="w-3.5 h-3.5" /> Invite Friend
+                </button>
+              </div>
             </div>
           </div>
         ))}
