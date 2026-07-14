@@ -38,12 +38,14 @@ import {
   Download,
   Sliders,
   Share,
-  Edit3
+  Edit3,
+  Disc
 } from "lucide-react";
 import { Song, VocalID, PerformanceLog, Challenge, LeaderboardUser, DirectChat, VenueEffect } from "./types";
 import VocalIDView from "./components/VocalIDView";
 import SongLibraryView from "./components/SongLibraryView";
 import IdolDuetHub from "./components/IdolDuetHub";
+import DemoHubView from "./components/DemoHubView";
 
 // Standard Venue effects preset config
 const VENUE_EFFECTS: VenueEffect[] = [
@@ -56,7 +58,7 @@ const VENUE_EFFECTS: VenueEffect[] = [
 
 export default function App() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<"home" | "studio" | "vocalid" | "companion" | "marketplace" | "challenges">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "studio" | "vocalid" | "companion" | "marketplace" | "challenges" | "demohub">("home");
 
   // Core App data
   const [songs, setSongs] = useState<Song[]>([]);
@@ -71,7 +73,7 @@ export default function App() {
     const savedAvatar = typeof window !== "undefined" ? localStorage.getItem("comsing_avatar_url") : null;
     const savedUsername = typeof window !== "undefined" ? localStorage.getItem("comsing_username") : null;
     return {
-      username: savedUsername || "Zen Platform Innovator",
+      username: savedUsername || "Zen - Platform Innovator",
       email: "zenieverse@gmail.com",
       country: "United States",
       ageGroup: "22-25",
@@ -116,7 +118,29 @@ export default function App() {
       } catch (err) {
         console.error("Storage error:", err);
       }
-      showToast("👤 Username updated successfully!", "success");
+      
+      // Save username to the backend server permanently
+      fetch("/api/user/profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ username: trimmed })
+      })
+        .then(res => res.json())
+        .then(savedData => {
+          if (savedData && savedData.username) {
+            setUserProfile(prev => ({
+              ...prev,
+              username: savedData.username
+            }));
+            showToast("👤 Username updated and synced with the server!", "success");
+          }
+        })
+        .catch(err => {
+          console.error("Failed to save username to server:", err);
+          showToast("👤 Username updated locally.", "info");
+        });
     }
   };
 
@@ -150,6 +174,7 @@ export default function App() {
   const [mp4ExportMode, setMp4ExportMode] = useState<"standard_mp4" | "studio_master_mp4">("studio_master_mp4");
   const [recordedMp4BlobUrl, setRecordedMp4BlobUrl] = useState<string | null>(null);
   const [isExportingMp4, setIsExportingMp4] = useState(false);
+  const [isPublishingToDemoHub, setIsPublishingToDemoHub] = useState(false);
 
   // Vocal signature player states
   const [playingIdolSignature, setPlayingIdolSignature] = useState<string | null>(null);
@@ -207,6 +232,7 @@ export default function App() {
     fetchSongs();
     fetchChallenges();
     fetchPerformanceHistory();
+    fetchUserProfile();
   }, []);
 
   // Sync vocalID with profile level details
@@ -782,6 +808,22 @@ export default function App() {
     }
   };
 
+  const fetchUserProfile = async () => {
+    try {
+      const resp = await fetch("/api/user/profile");
+      const data = await resp.json();
+      if (data) {
+        setUserProfile((prev) => ({
+          ...prev,
+          username: data.username || prev.username,
+          avatarUrl: data.avatarUrl || prev.avatarUrl,
+        }));
+      }
+    } catch (e) {
+      console.error("Failed to load user profile:", e);
+    }
+  };
+
   // Recording starts
   const handleStartRecord = (mode: "Solo" | "Duet" | "Trio" = "Duet") => {
     if (!selectedSong) return;
@@ -885,6 +927,79 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // Publish recorded performance directly to Demo Hub
+  const handlePublishToDemoHub = async () => {
+    if (!selectedSong || !vocalReview) return;
+    try {
+      setIsPublishingToDemoHub(true);
+      
+      // Convert recorded blob URL to base64 for persistent storage
+      let mediaBase64 = "";
+      if (recordedMp4BlobUrl) {
+        try {
+          const blobResponse = await fetch(recordedMp4BlobUrl);
+          const blob = await blobResponse.blob();
+          mediaBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        } catch (err) {
+          console.error("Error reading recorded blob:", err);
+        }
+      }
+
+      const body = {
+        title: selectedSong.title,
+        artist: userProfile.username || "Performer",
+        genre: selectedSong.genre || "Synthpop / Dream Pop",
+        description: `Duet/Karaoke recording of "${selectedSong.title}" performed live in ComSing Cyber Studio!`,
+        audioUrl: mediaBase64,
+        videoUrl: mediaBase64,
+        imageUrl: selectedSong.imageUrl || "https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=500&auto=format&fit=crop&q=60",
+        duration: selectedSong.duration || "2:54",
+        score: vocalReview.score
+      };
+
+      const response = await fetch("/api/demohub/tracks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+
+      if (response.ok) {
+        showToast("🚀 Performance successfully published to ComSing Demo Hub!", "success");
+        
+        // Upgrade XP points & level up check since it's a saved performance too
+        if (vocalID) {
+          const updatedvID = {
+            ...vocalID,
+            xp: vocalID.xp + 150,
+            level: vocalID.xp + 150 > 500 ? "Rising Star" : vocalID.level
+          };
+          setVocalID(updatedvID);
+        } else {
+          setUserProfile(prev => ({ ...prev, xp: prev.xp + 150, coins: prev.coins + 70 }));
+        }
+        fetchPerformanceHistory();
+        localStorage.setItem("comsing_autoplay_new", "true");
+        
+        // Navigate to the Demo Hub and clear recording review state
+        setActiveTab("demohub");
+        setRecordingState("idle");
+      } else {
+        const errData = await response.json();
+        showToast(errData.error || "Failed to publish track to Demo Hub", "warning");
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast("Error publishing performance to Demo Hub", "warning");
+    } finally {
+      setIsPublishingToDemoHub(false);
     }
   };
 
@@ -1134,7 +1249,6 @@ export default function App() {
                 <Edit3 className="w-2.5 h-2.5 text-slate-400 group-hover:text-pink-400 transition-colors" />
               </div>
             )}
-            <p className="text-[9px] text-slate-400 tracking-wider font-mono">{userProfile.email}</p>
           </div>
           <div 
             onClick={() => document.getElementById("avatar-upload-file-picker")?.click()}
@@ -1173,7 +1287,29 @@ export default function App() {
                   } catch (err) {
                     console.error("Storage error:", err);
                   }
-                  showToast("🌟 Performer avatar updated and saved as default successfully!", "success");
+                  
+                  // Save user avatar to the backend server permanently
+                  fetch("/api/user/avatar", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ avatarUrl: dataUrl })
+                  })
+                    .then(res => res.json())
+                    .then(savedData => {
+                      if (savedData && savedData.avatarUrl) {
+                        setUserProfile(prev => ({
+                          ...prev,
+                          avatarUrl: savedData.avatarUrl
+                        }));
+                        showToast("🌟 Performer avatar updated, saved, and synced with the server successfully!", "success");
+                      }
+                    })
+                    .catch(err => {
+                      console.error("Failed to save avatar to server:", err);
+                      showToast("🌟 Performer avatar updated locally (server sync offline).", "warning");
+                    });
                 };
                 reader.readAsDataURL(file);
               }
@@ -1245,6 +1381,16 @@ export default function App() {
             >
               <Trophy className="w-5.5 h-5.5" />
               <span className="text-[9px] font-mono">Clash</span>
+            </button>
+
+            <button
+              onClick={() => { setActiveTab("demohub"); setRecordingState("idle"); }}
+              className={`p-3 rounded-2xl transition-all duration-300 relative group flex flex-col items-center gap-1 ${
+                activeTab === "demohub" ? "text-pink-500 bg-pink-500/10" : "text-white/40 hover:text-white"
+              }`}
+            >
+              <Disc className="w-5.5 h-5.5" />
+              <span className="text-[9px] font-mono">Demo Hub</span>
             </button>
           </div>
 
@@ -1365,6 +1511,7 @@ export default function App() {
                   selectedSong={selectedSong}
                   onSongSelect={setSelectedSong}
                   onStartRecord={handleStartRecord}
+                  isRecording={recordingState !== "idle"}
                 />
               </div>
 
@@ -1498,6 +1645,18 @@ export default function App() {
                         ? "bg-slate-950 bg-[radial-gradient(circle_at_center,rgba(168,85,247,0.15),transparent_60%)] opacity-95"
                         : "bg-gradient-to-b from-[#251a4a]/40 to-transparent"
                     }`} />
+
+                    {/* Vocal-responsive pulsing background dynamic glow */}
+                    {recordingState === "recording" && (
+                      <div 
+                        className="absolute inset-0 pointer-events-none transition-all duration-100 select-none mix-blend-color-dodge z-0 animate-pulse"
+                        style={{
+                          background: `radial-gradient(circle at 50% 50%, rgba(236,72,153,${(simulatedAudioVolume / 100) * 0.45}) 0%, rgba(6,182,212,${(simulatedAudioVolume / 100) * 0.25}) 50%, transparent 80%)`,
+                          transform: `scale(${1.0 + (simulatedAudioVolume / 100) * 0.12})`,
+                          opacity: 0.85,
+                        }}
+                      />
+                    )}
                     {stageTheme === "Retro Cosmic Laser Synth Map" && (
                       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-80 select-none">
                         {/* Retro Grid */}
@@ -2513,7 +2672,7 @@ export default function App() {
                     </div>
 
                     {/* Save Performance Actions */}
-                    <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
+                    <div className="flex flex-wrap justify-end gap-3 pt-4 border-t border-white/5">
                       <button
                         onClick={() => { setRecordingState("idle"); setActiveTab("home"); }}
                         className="px-5 py-2.5 bg-slate-950 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-sans transition"
@@ -2525,7 +2684,15 @@ export default function App() {
                         onClick={handleSavePerformance}
                         className="cursor-pointer px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-sans font-bold rounded-xl text-xs uppercase tracking-widest hover:opacity-90 transition"
                       >
-                        💾 Save to Passport & Earn XP
+                        💾 Save to Passport
+                      </button>
+
+                      <button
+                        onClick={handlePublishToDemoHub}
+                        disabled={isPublishingToDemoHub}
+                        className="cursor-pointer px-6 py-2.5 bg-gradient-to-r from-pink-600 to-rose-600 disabled:opacity-50 text-white font-sans font-bold rounded-xl text-xs uppercase tracking-widest hover:opacity-90 transition flex items-center gap-1.5"
+                      >
+                        {isPublishingToDemoHub ? "Publishing..." : "🚀 Publish to Demo Hub"}
                       </button>
                     </div>
 
@@ -2911,6 +3078,12 @@ export default function App() {
 
               </div>
             </div>
+          )}
+
+
+          {/* ================== TAB: DEMO HUB ================== */}
+          {activeTab === "demohub" && (
+            <DemoHubView onShowToast={showToast} />
           )}
 
         </main>

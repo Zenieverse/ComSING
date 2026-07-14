@@ -13,6 +13,7 @@ export interface Song {
   lyrics: string[];
   duetParts: { sender: "idol" | "user" | "both"; text: string; part: string }[];
   audioWaveform: number[];
+  audioUrl?: string;
 }
 
 export interface VocalID {
@@ -74,4 +75,19 @@ export interface VenueEffect {
   reverbMult: number;
   gainMult: number;
   desc: string;
+}
+
+export interface DemoTrack {
+  id: string;
+  title: string;
+  artist: string;
+  genre: string;
+  description: string;
+  audioUrl?: string;
+  videoUrl?: string;
+  imageUrl?: string;
+  createdAt: string;
+  duration: string;
+  likes: number;
+  score?: number;
 }

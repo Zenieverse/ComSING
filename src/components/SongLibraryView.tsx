@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Search, Music, Sparkles, SlidersHorizontal, ChevronRight, Activity } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Search, Music, Sparkles, SlidersHorizontal, ChevronRight, Activity, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { Song } from "../types";
 
 interface SongLibraryViewProps {
@@ -7,6 +7,7 @@ interface SongLibraryViewProps {
   selectedSong: Song | null;
   onSongSelect: (song: Song) => void;
   onStartRecord: (mode: "Solo" | "Duet" | "Trio") => void;
+  isRecording?: boolean;
 }
 
 export default function SongLibraryView({
@@ -14,12 +15,131 @@ export default function SongLibraryView({
   selectedSong,
   onSongSelect,
   onStartRecord,
+  isRecording = false,
 }: SongLibraryViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGenre, setSelectedGenre] = useState("All");
   const [selectedDifficulty, setSelectedDifficulty] = useState("All");
 
-  const genres = ["All", "K-Pop", "Synthpop / Dream Pop", "Classic Rock", "C-Pop / Ballad"];
+  // Audio preview player states
+  const [playingSongId, setPlayingSongId] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.7);
+  const [isMuted, setIsMuted] = useState(false);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Initialize and clean up HTMLAudioElement
+  useEffect(() => {
+    const audio = new Audio();
+    audio.loop = true;
+    audioRef.current = audio;
+
+    const onTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+    };
+    const onLoadedMetadata = () => {
+      setDuration(audio.duration || 0);
+    };
+    const onEnded = () => {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(e => console.warn("Playback error:", e));
+      } else {
+        setIsPlaying(false);
+        setPlayingSongId(null);
+      }
+    };
+
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("loadedmetadata", onLoadedMetadata);
+    audio.addEventListener("ended", onEnded);
+
+    return () => {
+      audio.pause();
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("ended", onEnded);
+    };
+  }, []);
+
+  // Pause active preview immediately if recording/session starts
+  useEffect(() => {
+    if (isRecording && isPlaying) {
+      handlePause();
+    }
+  }, [isRecording]);
+
+  const handlePlaySong = (song: Song) => {
+    if (!audioRef.current) return;
+    
+    // If we clicked play on the already playing song, resume it
+    if (playingSongId === song.id) {
+      audioRef.current.play().catch(e => console.warn("Playback error:", e));
+      setIsPlaying(true);
+      return;
+    }
+
+    // Otherwise, play the new song
+    if (song.audioUrl) {
+      audioRef.current.src = song.audioUrl;
+      audioRef.current.loop = true;
+      audioRef.current.volume = isMuted ? 0 : volume;
+      audioRef.current.play().catch(e => console.warn("Playback error:", e));
+      setPlayingSongId(song.id);
+      setIsPlaying(true);
+      // Select the song automatically on preview click
+      onSongSelect(song);
+    }
+  };
+
+  const handlePause = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    setIsPlaying(false);
+  };
+
+  const handleTogglePlay = (song: Song) => {
+    if (playingSongId === song.id && isPlaying) {
+      handlePause();
+    } else {
+      handlePlaySong(song);
+    }
+  };
+
+  const handleSeek = (val: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = val;
+      setCurrentTime(val);
+    }
+  };
+
+  const handleVolumeChange = (val: number) => {
+    setVolume(val);
+    if (audioRef.current) {
+      audioRef.current.volume = isMuted ? 0 : val;
+    }
+  };
+
+  const handleToggleMute = () => {
+    const nextMute = !isMuted;
+    setIsMuted(nextMute);
+    if (audioRef.current) {
+      audioRef.current.volume = nextMute ? 0 : volume;
+    }
+  };
+
+  const formatTime = (timeInSeconds: number) => {
+    if (isNaN(timeInSeconds)) return "00:00";
+    const mins = Math.floor(timeInSeconds / 60);
+    const secs = Math.floor(timeInSeconds % 60);
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const genres = ["All", "Pop Fav", "K-Pop", "Synthpop / Dream Pop", "Classic Rock", "C-Pop / Ballad"];
   const difficulties = ["All", "Easy", "Medium", "Hard"];
 
   const filteredSongs = songs.filter((song) => {
@@ -29,7 +149,10 @@ export default function SongLibraryView({
       song.artist.toLowerCase().includes(term) ||
       (song.composer && song.composer.toLowerCase().includes(term)) ||
       (song.lyricist && song.lyricist.toLowerCase().includes(term));
-    const matchesGenre = selectedGenre === "All" || song.genre === selectedGenre;
+    const matchesGenre =
+      selectedGenre === "All" ||
+      song.genre === selectedGenre ||
+      (selectedGenre === "Pop Fav" && (song.genre === "Pop Fav" || song.genre === "Pop / Acoustic"));
     const matchesDifficulty = selectedDifficulty === "All" || song.difficulty === selectedDifficulty;
     return matchesSearch && matchesGenre && matchesDifficulty;
   });
@@ -112,15 +235,26 @@ export default function SongLibraryView({
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div
-                    className={`w-10 h-10 rounded-lg flex items-center justify-center font-mono font-bold text-sm ${
-                      selectedSong?.id === song.id
-                        ? "bg-purple-500 text-white"
-                        : "bg-slate-900 border border-slate-800 text-purple-400"
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTogglePlay(song);
+                    }}
+                    className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                      playingSongId === song.id && isPlaying
+                        ? "bg-pink-500 text-white animate-pulse shadow-lg shadow-pink-500/20"
+                        : selectedSong?.id === song.id
+                        ? "bg-purple-500 text-white hover:bg-purple-400"
+                        : "bg-slate-900 border border-slate-800 text-purple-400 hover:text-white hover:bg-purple-600/20"
                     }`}
+                    title={playingSongId === song.id && isPlaying ? "Pause Preview" : "Play Preview"}
                   >
-                    ♩
-                  </div>
+                    {playingSongId === song.id && isPlaying ? (
+                      <Pause className="w-4 h-4 fill-current" />
+                    ) : (
+                      <Play className="w-4 h-4 fill-current ml-0.5" />
+                    )}
+                  </button>
                   <div>
                     <h4 className="text-sm font-sans font-medium text-white group-hover:text-purple-300 transition">
                       {song.title}
@@ -186,22 +320,114 @@ export default function SongLibraryView({
                 {selectedSong.description}
               </p>
 
-              {/* Waveform graphic visualization */}
+              {/* Waveform graphic visualization with play state synchronization */}
               <div>
                 <p className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-1">
-                  <Activity className="w-3.5 h-3.5 text-cyan-500" /> Estimated Wave Spectrogram
+                  <Activity className="w-3.5 h-3.5 text-cyan-500" /> Live Wave Spectrogram
                 </p>
-                <div className="flex items-end gap-[2px] h-12 bg-slate-950 rounded-lg p-2 border border-slate-800/50">
-                  {selectedSong.audioWaveform.map((val, idx) => (
-                    <div
-                      key={idx}
-                      className="flex-1 bg-cyan-500 rounded-t"
-                      style={{
-                        height: `${val}%`,
-                        opacity: 0.4 + (val / 100) * 0.6,
-                      }}
+                <div className="flex items-end gap-[2px] h-12 bg-slate-950 rounded-lg p-2 border border-slate-800/50 relative overflow-hidden">
+                  {selectedSong.audioWaveform.map((val, idx) => {
+                    const currentBarIndex = duration > 0 ? Math.floor((currentTime / duration) * selectedSong.audioWaveform.length) : -1;
+                    const isPassed = playingSongId === selectedSong.id && idx <= currentBarIndex;
+                    const isCurrent = playingSongId === selectedSong.id && idx === currentBarIndex;
+                    
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex-1 rounded-t transition-all duration-300 ${
+                          isPassed
+                            ? "bg-gradient-to-t from-pink-500 to-rose-400 shadow-[0_0_8px_rgba(236,72,153,0.4)]"
+                            : "bg-cyan-500"
+                        }`}
+                        style={{
+                          height: playingSongId === selectedSong.id && isPlaying && isCurrent
+                            ? `${Math.max(15, val + (Math.sin(currentTime * 10 + idx) * 15))}%`
+                            : `${val}%`,
+                          opacity: isPassed
+                            ? 1.0
+                            : 0.3 + (val / 100) * 0.7,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Beautiful, Integrated Preview Player Control Center */}
+              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      onClick={() => handleTogglePlay(selectedSong)}
+                      className={`w-9 h-9 flex items-center justify-center rounded-lg transition transform active:scale-95 ${
+                        playingSongId === selectedSong.id && isPlaying
+                          ? "bg-pink-600 text-white hover:bg-pink-500 shadow-md shadow-pink-950/40"
+                          : "bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-950/40"
+                      }`}
+                      title={playingSongId === selectedSong.id && isPlaying ? "Pause Preview" : "Play Preview"}
+                    >
+                      {playingSongId === selectedSong.id && isPlaying ? (
+                        <Pause className="w-4 h-4 fill-current" />
+                      ) : (
+                        <Play className="w-4 h-4 fill-current ml-0.5" />
+                      )}
+                    </button>
+                    <div>
+                      <p className="text-[10px] font-mono font-bold uppercase text-slate-300">
+                        {playingSongId === selectedSong.id && isPlaying ? "Streaming Preview" : "Track Standby"}
+                      </p>
+                      <p className="text-[9px] font-mono text-slate-500">
+                        {playingSongId === selectedSong.id && isPlaying ? "Web Audio Active" : "Ready to Stream"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Volume Slider */}
+                  <div className="flex items-center gap-1.5 bg-slate-900/60 px-2 py-1 rounded-lg border border-slate-800/40">
+                    <button
+                      onClick={handleToggleMute}
+                      className="p-0.5 rounded text-slate-400 hover:text-white transition-colors"
+                      title={isMuted ? "Unmute" : "Mute"}
+                    >
+                      {isMuted || volume === 0 ? (
+                        <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                      ) : (
+                        <Volume2 className="w-3.5 h-3.5 text-purple-400" />
+                      )}
+                    </button>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={volume}
+                      onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                      className="w-14 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
                     />
-                  ))}
+                  </div>
+                </div>
+
+                {/* Progress bar slider and timers */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-mono text-slate-500 w-8 text-left">
+                      {playingSongId === selectedSong.id ? formatTime(currentTime) : "00:00"}
+                    </span>
+                    
+                    <input
+                      type="range"
+                      min="0"
+                      max={playingSongId === selectedSong.id ? duration || 100 : 100}
+                      value={playingSongId === selectedSong.id ? currentTime : 0}
+                      onChange={(e) => playingSongId === selectedSong.id && handleSeek(parseFloat(e.target.value))}
+                      disabled={playingSongId !== selectedSong.id}
+                      className="flex-1 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-pink-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                    />
+                    
+                    <span className="text-[9px] font-mono text-slate-500 w-8 text-right">
+                      {playingSongId === selectedSong.id ? formatTime(duration) : "02:30"}
+                    </span>
+                  </div>
                 </div>
               </div>
 

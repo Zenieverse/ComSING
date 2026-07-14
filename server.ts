@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import {
   getVocalCoachingFeedback,
@@ -21,6 +22,7 @@ const SONG_LIBRARY = [
     range: "D3-A4",
     tempo: 124,
     description: "Catchy synth lines with hyper-focused rhythm beats. Ideal for rapid transitions.",
+    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
     lyrics: [
       "[0:00] Spark in the neon shadows...",
       "[0:04] We hit the rhythm faster than light...",
@@ -51,6 +53,7 @@ const SONG_LIBRARY = [
     range: "F3-C5",
     tempo: 110,
     description: "Sweeping reverbs and long airy vowels. Demands excellent breath-holding dynamics.",
+    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
     lyrics: [
       "[0:00] Floating inside the signal grid...",
       "[0:05] Tell me what you see in the cloud...",
@@ -79,6 +82,7 @@ const SONG_LIBRARY = [
     range: "A2-E4",
     tempo: 96,
     description: "Raw dynamic punches and gravelly baritone resonance. Perfect for beginners testing chests.",
+    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
     lyrics: [
       "[0:00] Runnin' down the broken highway line...",
       "[0:04] Engines growlin' like a hungry beast...",
@@ -105,6 +109,7 @@ const SONG_LIBRARY = [
     range: "G3-D5",
     tempo: 82,
     description: "Silky, delicate phrasing and sweeping emotional resonance. Requires stability.",
+    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
     lyrics: [
       "[0:00] Under the quiet bamboo stream...",
       "[0:05] Silver moonlight paint the paper screen...",
@@ -127,10 +132,11 @@ const SONG_LIBRARY = [
     lyricist: "Jason Mraz, Colbie Caillat, Timothy Fagan",
     vibe: "Sweet Acoustic Duet",
     difficulty: "Medium",
-    genre: "Pop / Acoustic",
+    genre: "Pop Fav",
     range: "C3-A4",
     tempo: 130,
     description: "A gorgeous, sweet acoustic pop ballad. Perfect for gentle pitch transitions, vocal projection guidance, and interactive duet coordination.",
+    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
     lyrics: [
       "[0:00] Do you hear me, I'm talking to you...",
       "[0:05] Across the water across the deep blue ocean...",
@@ -232,11 +238,268 @@ const ACTIVE_CHALLENGES = [
   { id: "c3", title: "Deep Chest Vintage Challenge", song: "Midnight Thunder", joined: 265, xpReward: 350, deadline: "June 10, 2026" }
 ];
 
+// Memory State for Demo Hub Tracks
+const TRACKS_FILE = path.join(process.cwd(), "demohub_tracks.json");
+const DEFAULT_TRACKS = [
+  {
+    id: "demo-1",
+    title: "Vivid Dreamscape (Vocal Mix)",
+    artist: "Zenie Star (AI Model x7)",
+    genre: "Synthpop / Dream Pop",
+    description: "First session on ComSing Studio! Immersive Head-Voice preset with 40% Hall echo saturation.",
+    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+    videoUrl: "",
+    imageUrl: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=60",
+    createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+    duration: "6:12",
+    likes: 12,
+    score: 95
+  },
+  {
+    id: "demo-2",
+    title: "K-Beat Slasher Anthem",
+    artist: "Kai Shin Duo Sync",
+    genre: "K-Pop",
+    description: "Pitch-aligned backing track duel trial. Rapid cadence testing.",
+    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+    videoUrl: "",
+    imageUrl: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&auto=format&fit=crop&q=60",
+    createdAt: new Date(Date.now() - 86400000).toISOString(),
+    duration: "7:05",
+    likes: 8,
+    score: 88
+  }
+];
+
+let DEMO_HUB_TRACKS: any[] = [];
+try {
+  if (fs.existsSync(TRACKS_FILE)) {
+    DEMO_HUB_TRACKS = JSON.parse(fs.readFileSync(TRACKS_FILE, "utf-8"));
+    // Ensure default tracks exist in the list
+    DEFAULT_TRACKS.forEach(def => {
+      if (!DEMO_HUB_TRACKS.some(t => t.id === def.id)) {
+        DEMO_HUB_TRACKS.push(def);
+      }
+    });
+  } else {
+    DEMO_HUB_TRACKS = [...DEFAULT_TRACKS];
+    fs.writeFileSync(TRACKS_FILE, JSON.stringify(DEMO_HUB_TRACKS, null, 2));
+  }
+} catch (err) {
+  console.error("Error loading demohub_tracks.json, using defaults", err);
+  DEMO_HUB_TRACKS = [...DEFAULT_TRACKS];
+}
+
+const saveTracksToFile = () => {
+  try {
+    fs.writeFileSync(TRACKS_FILE, JSON.stringify(DEMO_HUB_TRACKS, null, 2));
+  } catch (err) {
+    console.error("Failed to write to demohub_tracks.json", err);
+  }
+};
+
+const saveBase64ToFile = (base64Data: string, prefix: string): string => {
+  if (!base64Data || !base64Data.startsWith("data:")) return base64Data;
+  try {
+    const semiColonIdx = base64Data.indexOf(";base64,");
+    if (semiColonIdx !== -1) {
+      const mimeType = base64Data.substring(5, semiColonIdx); // after "data:"
+      const base64Content = base64Data.substring(semiColonIdx + 8); // after ";base64,"
+      const buffer = Buffer.from(base64Content, "base64");
+      
+      // Extract clean MIME type without attributes like codecs=opus
+      const cleanMime = mimeType.split(";")[0].trim().toLowerCase();
+      let ext = "";
+      const parts = cleanMime.split("/");
+      if (parts.length === 2) {
+        ext = parts[1];
+      }
+      
+      // Standardize common extensions
+      if (ext === "mpeg" || ext === "mp3" || ext === "mpeg3" || ext === "x-mpeg-3" || ext === "x-mp3" || ext === "x-mpeg3") {
+        ext = "mp3";
+      } else if (ext === "quicktime") {
+        ext = "mov";
+      } else if (ext === "x-m4a" || ext === "m4a") {
+        ext = "m4a";
+      } else if (ext === "webm") {
+        ext = "webm";
+      } else if (ext === "mp4" || ext === "x-mp4") {
+        ext = "mp4";
+      } else if (ext === "svg+xml") {
+        ext = "svg";
+      } else if (ext === "jpeg" || ext === "jpg") {
+        ext = "jpg";
+      } else if (ext === "png") {
+        ext = "png";
+      } else if (ext === "webp") {
+        ext = "webp";
+      }
+      
+      if (!ext) {
+        if (cleanMime.startsWith("audio/")) ext = "mp3";
+        else if (cleanMime.startsWith("video/")) ext = "mp4";
+        else if (cleanMime.startsWith("image/")) ext = "png";
+        else ext = "bin";
+      }
+
+      const assetsDir = path.join(process.cwd(), "assets");
+      if (!fs.existsSync(assetsDir)) {
+        fs.mkdirSync(assetsDir, { recursive: true });
+      }
+
+      const fileName = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}.${ext}`;
+      fs.writeFileSync(path.join(assetsDir, fileName), buffer);
+      return `/api/demohub/files/${fileName}`;
+    }
+  } catch (err) {
+    console.error(`Failed to save base64 file for prefix ${prefix}:`, err);
+  }
+  return base64Data;
+};
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "100mb" }));
+  app.use(express.urlencoded({ limit: "100mb", extended: true }));
+
+  // Save user avatar (Avatar of the Innovator)
+  app.post("/api/user/avatar", (req, res) => {
+    try {
+      const { avatarUrl } = req.body;
+      if (!avatarUrl) {
+        return res.status(400).json({ error: "avatarUrl is required" });
+      }
+
+      // Ensure assets directory exists
+      const assetsDir = path.join(process.cwd(), "assets");
+      if (!fs.existsSync(assetsDir)) {
+        fs.mkdirSync(assetsDir, { recursive: true });
+      }
+
+      // Read current config to preserve existing properties like username
+      const configPath = path.join(assetsDir, "user_avatar_config.json");
+      let currentConfig: any = {};
+      if (fs.existsSync(configPath)) {
+        try {
+          currentConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        } catch (e) {}
+      }
+
+      let finalAvatarUrl = avatarUrl;
+
+      // If it is a base64 DataURL, parse and write as file
+      if (avatarUrl.startsWith("data:image/")) {
+        const semiColonIdx = avatarUrl.indexOf(";base64,");
+        if (semiColonIdx !== -1) {
+          const mimeType = avatarUrl.substring(5, semiColonIdx); // after "data:"
+          const base64Content = avatarUrl.substring(semiColonIdx + 8); // after ";base64,"
+          const buffer = Buffer.from(base64Content, "base64");
+          
+          const cleanMime = mimeType.split(";")[0].trim().toLowerCase();
+          let ext = "png";
+          const parts = cleanMime.split("/");
+          if (parts.length === 2) {
+            ext = parts[1];
+          }
+          if (ext === "svg+xml") ext = "svg";
+          if (ext === "jpeg") ext = "jpg";
+          
+          // Clear any existing user_avatar files to avoid duplicates with different extensions
+          if (fs.existsSync(assetsDir)) {
+            const existingFiles = fs.readdirSync(assetsDir);
+            existingFiles.forEach(f => {
+              if (f.startsWith("user_avatar.")) {
+                try { fs.unlinkSync(path.join(assetsDir, f)); } catch(e) {}
+              }
+            });
+          }
+
+          const avatarPath = path.join(assetsDir, `user_avatar.${ext}`);
+          fs.writeFileSync(avatarPath, buffer);
+          
+          finalAvatarUrl = `/api/user/avatar-img?t=${Date.now()}`;
+        }
+      }
+
+      currentConfig.avatarUrl = finalAvatarUrl;
+      fs.writeFileSync(configPath, JSON.stringify(currentConfig, null, 2));
+      
+      return res.json({ success: true, avatarUrl: finalAvatarUrl });
+    } catch (err: any) {
+      console.error("Failed to save avatar:", err);
+      return res.status(500).json({ error: "Failed to save avatar", message: err.message });
+    }
+  });
+
+  // Serve the saved user avatar image
+  app.get("/api/user/avatar-img", (req, res) => {
+    try {
+      const assetsDir = path.join(process.cwd(), "assets");
+      if (fs.existsSync(assetsDir)) {
+        const files = fs.readdirSync(assetsDir);
+        const avatarFile = files.find(f => f.startsWith("user_avatar."));
+        if (avatarFile) {
+          return res.sendFile(path.join(assetsDir, avatarFile));
+        }
+      }
+    } catch (e) {
+      console.error("Error serving avatar-img:", e);
+    }
+    // Return standard default fallback SVG if no file is saved yet
+    const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23ec4899"/><stop offset="100%" stop-color="%238b5cf6"/></linearGradient></defs><rect width="100" height="100" fill="%230d071c"/><circle cx="50" cy="45" r="20" fill="url(%23g)"/><path d="M15,85 C15,65 30,58 50,58 C70,58 85,65 85,85" fill="none" stroke="url(%23g)" stroke-width="6" stroke-linecap="round"/></svg>`;
+    res.setHeader("Content-Type", "image/svg+xml");
+    return res.send(fallbackSvg);
+  });
+
+  // Save/Update user profile details
+  app.post("/api/user/profile", (req, res) => {
+    try {
+      const { username, avatarUrl } = req.body;
+      const assetsDir = path.join(process.cwd(), "assets");
+      if (!fs.existsSync(assetsDir)) {
+        fs.mkdirSync(assetsDir, { recursive: true });
+      }
+
+      const configPath = path.join(assetsDir, "user_avatar_config.json");
+      let currentConfig: any = {};
+      if (fs.existsSync(configPath)) {
+        try {
+          currentConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        } catch (e) {}
+      }
+
+      if (username !== undefined) {
+        currentConfig.username = username;
+      }
+      if (avatarUrl !== undefined) {
+        currentConfig.avatarUrl = avatarUrl;
+      }
+
+      fs.writeFileSync(configPath, JSON.stringify(currentConfig, null, 2));
+      return res.json({ success: true, ...currentConfig });
+    } catch (err: any) {
+      console.error("Failed to save profile:", err);
+      return res.status(500).json({ error: "Failed to save profile", message: err.message });
+    }
+  });
+
+  // Get user profile details
+  app.get("/api/user/profile", (req, res) => {
+    try {
+      const configPath = path.join(process.cwd(), "assets", "user_avatar_config.json");
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        return res.json({
+          avatarUrl: config.avatarUrl || null,
+          username: config.username || "Zen - Platform Innovator"
+        });
+      }
+    } catch (err) {}
+    return res.json({ avatarUrl: null, username: "Zen - Platform Innovator" });
+  });
 
   // API 1: Songs Catalogue
   app.get("/api/songs", (req, res) => {
@@ -394,6 +657,150 @@ async function startServer() {
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Concert stage rendering configuration failed", message: e.message });
+    }
+  });
+
+  // Demo Hub API 1: Fetch all tracks
+  app.get("/api/demohub/tracks", (req, res) => {
+    res.json(DEMO_HUB_TRACKS);
+  });
+
+  // Demo Hub API: File serving endpoint for uploaded tracks
+  app.get("/api/demohub/files/:filename", (req, res) => {
+    try {
+      const { filename } = req.params;
+      const filePath = path.join(process.cwd(), "assets", filename);
+      if (fs.existsSync(filePath)) {
+        return res.sendFile(filePath);
+      }
+    } catch (e) {
+      console.error("Error serving demohub file:", e);
+    }
+    return res.status(404).send("File not found");
+  });
+
+  // Demo Hub API 2: Add new recorded track (saving base64 files persistently)
+  app.post("/api/demohub/tracks", (req, res) => {
+    try {
+      const { title, artist, genre, description, audioUrl, videoUrl, imageUrl, duration, score } = req.body;
+      
+      if (!title || !artist) {
+        return res.status(400).json({ error: "Title and Artist are required fields." });
+      }
+
+      // Convert base64 data to physical files on the server
+      const savedAudioUrl = audioUrl ? saveBase64ToFile(audioUrl, "track-audio") : "";
+      const savedVideoUrl = videoUrl ? saveBase64ToFile(videoUrl, "track-video") : "";
+      const savedImageUrl = imageUrl ? saveBase64ToFile(imageUrl, "track-image") : "https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=500&auto=format&fit=crop&q=60";
+      
+      let parsedScore = typeof score === "number" ? score : parseInt(score);
+      if (isNaN(parsedScore)) {
+        parsedScore = Math.floor(Math.random() * 15) + 85; // Default realistic high vocal score (85 to 99)
+      } else {
+        parsedScore = Math.max(0, Math.min(100, parsedScore));
+      }
+
+      const newTrack = {
+        id: `demo-${Date.now()}`,
+        title,
+        artist,
+        genre: genre || "Acoustic",
+        description: description || "",
+        audioUrl: savedAudioUrl,
+        videoUrl: savedVideoUrl,
+        imageUrl: savedImageUrl,
+        createdAt: new Date().toISOString(),
+        duration: duration && duration !== "0:00" ? duration : "2:54",
+        likes: 0,
+        score: parsedScore
+      };
+
+      DEMO_HUB_TRACKS.unshift(newTrack);
+      saveTracksToFile();
+      res.json({ success: true, track: newTrack });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to upload track data", message: err.message });
+    }
+  });
+
+  // Demo Hub API 3: Upvote track
+  app.post("/api/demohub/tracks/:id/like", (req, res) => {
+    const { id } = req.params;
+    const track = DEMO_HUB_TRACKS.find(t => t.id === id);
+    if (track) {
+      track.likes += 1;
+      saveTracksToFile();
+      res.json({ success: true, likes: track.likes });
+    } else {
+      res.status(404).json({ error: "Track not found" });
+    }
+  });
+
+  // Demo Hub API 3.5: Unlike/unvote track
+  app.post("/api/demohub/tracks/:id/unlike", (req, res) => {
+    const { id } = req.params;
+    const track = DEMO_HUB_TRACKS.find(t => t.id === id);
+    if (track) {
+      track.likes = Math.max(0, track.likes - 1);
+      saveTracksToFile();
+      res.json({ success: true, likes: track.likes });
+    } else {
+      res.status(404).json({ error: "Track not found" });
+    }
+  });
+
+  // Demo Hub API 4: Delete track (including referenced physical files)
+  app.delete("/api/demohub/tracks/:id", (req, res) => {
+    const { id } = req.params;
+    const track = DEMO_HUB_TRACKS.find(t => t.id === id);
+    if (track) {
+      // Clean up physical files from assets
+      const cleanFile = (url?: string) => {
+        if (url && url.startsWith("/api/demohub/files/")) {
+          const filename = url.replace("/api/demohub/files/", "");
+          const filePath = path.join(process.cwd(), "assets", filename);
+          if (fs.existsSync(filePath)) {
+            try {
+              fs.unlinkSync(filePath);
+            } catch (err) {
+              console.error(`Failed to delete orphaned track file ${filePath}:`, err);
+            }
+          }
+        }
+      };
+      cleanFile(track.audioUrl);
+      cleanFile(track.videoUrl);
+      cleanFile(track.imageUrl);
+
+      DEMO_HUB_TRACKS = DEMO_HUB_TRACKS.filter(t => t.id !== id);
+      saveTracksToFile();
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: "Track not found" });
+    }
+  });
+
+  // Demo Hub API 5: Update track details
+  app.put("/api/demohub/tracks/:id", (req, res) => {
+    const { id } = req.params;
+    const { title, artist, genre, description, score } = req.body;
+    const track = DEMO_HUB_TRACKS.find(t => t.id === id);
+    if (track) {
+      if (title !== undefined) track.title = title;
+      if (artist !== undefined) track.artist = artist;
+      if (genre !== undefined) track.genre = genre;
+      if (description !== undefined) track.description = description;
+      if (score !== undefined) {
+        const parsedScore = typeof score === "number" ? score : parseInt(score);
+        if (!isNaN(parsedScore)) {
+          track.score = Math.max(0, Math.min(100, parsedScore));
+        }
+      }
+      saveTracksToFile();
+      res.json({ success: true, track });
+    } else {
+      res.status(404).json({ error: "Track not found" });
     }
   });
 
